@@ -1,6 +1,6 @@
 {
-    "version": "1.0.0",
-    "build": 1,
+    "version": "1.0.1",
+    "build": 2,
     "released": "2026-07-28",
     "min_php": "8.3.0",
     "required_ext": ["pdo_mysql", "curl", "mbstring", "openssl", "zip", "gd", "fileinfo", "json"],
