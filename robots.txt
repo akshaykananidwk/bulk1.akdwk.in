@@ -1,0 +1,8 @@
+User-agent: *
+Disallow: /admin/
+Disallow: /tenant/
+Disallow: /agent/
+Disallow: /api/
+Disallow: /webhook/
+Disallow: /install/
+Allow: /

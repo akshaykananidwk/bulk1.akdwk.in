@@ -1,0 +1,15 @@
+{
+    "version": "1.0.0",
+    "build": 1,
+    "released": "2026-07-28",
+    "min_php": "8.3.0",
+    "required_ext": ["pdo_mysql", "curl", "zip", "gd", "mbstring"],
+    "breaking": false,
+    "changelog": [
+        "Initial release."
+    ],
+    "protect": ["assets/custom/"],
+    "delete": [],
+    "post_update_sql": [],
+    "notes": "No action required."
+}

@@ -1,0 +1,11 @@
+{
+    "version": "1.0.0",
+    "build": 1,
+    "released": "2026-07-28",
+    "min_php": "8.3.0",
+    "required_ext": ["pdo_mysql", "curl", "mbstring", "openssl", "zip", "gd", "fileinfo", "json"],
+    "breaking": false,
+    "changelog": [
+        "Initial release: core framework, multi-tenant SaaS layer, Meta WhatsApp Cloud API module, team inbox, installer, GitHub auto-updater."
+    ]
+}
