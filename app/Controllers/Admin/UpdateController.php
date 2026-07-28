@@ -56,9 +56,19 @@ final class UpdateController extends Controller
 
     public function saveSettings(Request $request): never
     {
+        // GitHub repo names may contain dots (e.g. bulk1.akdwk.in). A combined
+        // "owner/repo" value in the repo field is accepted and split.
+        $combined = $request->str('github_repo');
+        if (str_contains($combined, '/')) {
+            [$ownerPart, $repoPart] = array_pad(explode('/', trim($combined, '/'), 2), 2, '');
+            if ($ownerPart !== '' && $repoPart !== '') {
+                $request->merge(['github_owner' => $ownerPart, 'github_repo' => $repoPart]);
+            }
+        }
+
         $data = $this->validate($request, [
-            'github_owner' => 'required|alpha_dash|max:100',
-            'github_repo' => 'required|alpha_dash|max:100',
+            'github_owner' => 'required|regex:/^[A-Za-z0-9-]+$/|max:100',
+            'github_repo' => 'required|regex:/^[A-Za-z0-9_.-]+$/|max:100',
             'github_branch' => 'required|string|max:100',
             'github_token' => 'nullable|string|max:255',
             'update_channel' => 'required|in:branch,release_tag',

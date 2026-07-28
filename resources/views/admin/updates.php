@@ -18,15 +18,13 @@
             <h3 class="card-title"><?= e(__('update.settings', 'GitHub repository')) ?></h3>
             <form method="post" action="<?= e(url('/admin/updates/settings')) ?>">
                 <?= csrf_field() ?>
-                <div class="grid-2">
-                    <div class="form-group">
-                        <label class="form-label"><?= e(__('update.owner', 'Owner')) ?></label>
-                        <input class="input" name="github_owner" value="<?= e($settings['owner']) ?>" required placeholder="yourname">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label"><?= e(__('update.repo', 'Repository')) ?></label>
-                        <input class="input" name="github_repo" value="<?= e($settings['repo']) ?>" required placeholder="krishna-whatsapp-cloud">
-                    </div>
+                <input type="hidden" name="github_owner" value="<?= e($settings['owner']) ?>">
+                <div class="form-group">
+                    <label class="form-label"><?= e(__('update.repo_full', 'GitHub repo (owner/repo)')) ?></label>
+                    <input class="input" name="github_repo"
+                           value="<?= e($settings['owner'] !== '' ? $settings['owner'] . '/' . $settings['repo'] : $settings['repo']) ?>"
+                           required placeholder="akshaykananidwk/bulk1.akdwk.in">
+                    <div class="form-hint"><?= e(__('update.repo_full_hint', 'Paste it exactly like the GitHub URL: owner/repository-name. Dots and dashes are fine.')) ?></div>
                 </div>
                 <div class="grid-2">
                     <div class="form-group">

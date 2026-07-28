@@ -110,8 +110,12 @@ final class Http
         $attempt = 0;
         while (true) {
             $ch = $this->buildCurl('GET', $url, null, null);
-            curl_setopt($ch, CURLOPT_FILE, $fp);
+            // Order matters: RETURNTRANSFER must be disabled BEFORE handing
+            // curl the file handle — setting it after CURLOPT_FILE resets the
+            // output target to stdout (the zip would stream into the browser
+            // response and the file would stay empty).
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, false);
+            curl_setopt($ch, CURLOPT_FILE, $fp);
             curl_setopt($ch, CURLOPT_TIMEOUT, max($this->timeout, 600));
             if ($progress !== null) {
                 curl_setopt($ch, CURLOPT_NOPROGRESS, false);

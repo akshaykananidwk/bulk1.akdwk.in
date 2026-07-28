@@ -19,12 +19,15 @@ final class GithubClient
     private string $repo;
     private string $branch;
     private ?string $token;
+    private string $apiBase;
 
     public function __construct(?string $owner = null, ?string $repo = null, ?string $branch = null, ?string $token = null)
     {
         $this->owner = $owner ?? (string) setting('update_github_owner', '');
         $this->repo = $repo ?? (string) setting('update_github_repo', '');
         $this->branch = $branch ?? ((string) setting('update_github_branch', '') ?: 'main');
+        // Overridable for GitHub Enterprise (https://ghe.example.com/api/v3)
+        $this->apiBase = rtrim((string) (setting('update_github_api_base', '') ?: 'https://api.github.com'), '/');
 
         if ($token !== null) {
             $this->token = $token !== '' ? $token : null;
@@ -52,7 +55,7 @@ final class GithubClient
     private function request(): Http
     {
         $http = Http::make()
-            ->baseUrl('https://api.github.com')
+            ->baseUrl($this->apiBase)
             ->withHeaders([
                 'Accept' => 'application/vnd.github+json',
                 'X-GitHub-Api-Version' => '2022-11-28',
@@ -138,7 +141,7 @@ final class GithubClient
         }
 
         $response = $http->download(
-            'https://api.github.com/repos/' . $this->owner . '/' . $this->repo . '/zipball/' . rawurlencode($ref),
+            $this->apiBase . '/repos/' . $this->owner . '/' . $this->repo . '/zipball/' . rawurlencode($ref),
             $destination,
             $progress
         );

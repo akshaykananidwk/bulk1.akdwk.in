@@ -179,6 +179,17 @@ final class Request
         return is_array($value) ? $value : [];
     }
 
+    /**
+     * Merge values into the request input (highest precedence).
+     * Used by controllers that normalise input before validation.
+     */
+    public function merge(array $values): void
+    {
+        foreach ($values as $key => $value) {
+            $this->post[$key] = $value;
+        }
+    }
+
     /** All input merged (POST + JSON + GET) */
     public function all(): array
     {
