@@ -936,6 +936,7 @@ CREATE TABLE IF NOT EXISTS `conversation_notes` (
   `created_at` DATETIME NOT NULL,
   `updated_at` DATETIME NOT NULL,
   INDEX `idx_conversation` (`conversation_id`),
+  INDEX `idx_tenant` (`tenant_id`),
   CONSTRAINT `fk_conv_notes_conversation` FOREIGN KEY (`conversation_id`) REFERENCES `conversations` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -948,6 +949,7 @@ CREATE TABLE IF NOT EXISTS `conversation_events` (
   `data` JSON NULL,
   `created_at` DATETIME NOT NULL,
   INDEX `idx_conversation` (`conversation_id`, `created_at`),
+  INDEX `idx_tenant` (`tenant_id`),
   CONSTRAINT `fk_conv_events_conversation` FOREIGN KEY (`conversation_id`) REFERENCES `conversations` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -987,6 +989,7 @@ CREATE TABLE IF NOT EXISTS `agent_signatures` (
   `auto_append` TINYINT(1) NOT NULL DEFAULT 0,
   `updated_at` DATETIME NOT NULL,
   UNIQUE KEY `uq_user` (`user_id`),
+  INDEX `idx_tenant` (`tenant_id`),
   CONSTRAINT `fk_agent_signatures_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1041,6 +1044,7 @@ CREATE TABLE IF NOT EXISTS `chat_transfers` (
   `reason` VARCHAR(255) NULL,
   `created_at` DATETIME NOT NULL,
   INDEX `idx_conversation` (`conversation_id`),
+  INDEX `idx_tenant` (`tenant_id`),
   CONSTRAINT `fk_chat_transfers_conversation` FOREIGN KEY (`conversation_id`) REFERENCES `conversations` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

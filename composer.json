@@ -1,0 +1,18 @@
+{
+    "name": "krishna-saas/whatsapp-cloud",
+    "description": "Krishna WhatsApp Cloud — self-hosted multi-tenant WhatsApp Business Cloud API platform (pure PHP + MySQL).",
+    "type": "project",
+    "license": "proprietary",
+    "require": {
+        "php": ">=8.3"
+    },
+    "suggest": {
+        "firebase/php-jwt": "JWT auth for the REST API (pure-PHP fallback bundled)",
+        "phpoffice/phpspreadsheet": "Native .xlsx import/export (CSV works without it)",
+        "smalot/pdfparser": "PDF knowledge-base training (TXT/CSV work without it)",
+        "endroid/qr-code": "High-quality QR images (SVG fallback bundled)"
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}

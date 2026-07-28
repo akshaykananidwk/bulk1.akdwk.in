@@ -419,6 +419,10 @@ final class QueryBuilder
 
     private function wrap(string $identifier): string
     {
+        // "column AS alias" support (alias must be a plain identifier)
+        if (preg_match('/^(.+?)\s+AS\s+([A-Za-z0-9_]+)$/i', $identifier, $m)) {
+            return $this->wrap($m[1]) . ' AS ' . $this->quote($m[2]);
+        }
         if (str_contains($identifier, '.')) {
             [$table, $column] = explode('.', $identifier, 2);
             return $this->quote($table) . '.' . ($column === '*' ? '*' : $this->quote($column));

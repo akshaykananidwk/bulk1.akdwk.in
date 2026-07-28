@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 use App\Core\Router;
 
-Router::get('/q/{slug}', [\App\Controllers\PublicSite\QrRedirectController::class, 'redirect'])
+Router::get('/q/{slug}', [\App\Controllers\PublicSite\QrRedirectController::class, 'handle'])
     ->where('slug', '[A-Za-z0-9]+')->name('qr.redirect');
 
 Router::get('/f/{tenant}/{slug}', [\App\Controllers\PublicSite\FormRendererController::class, 'show'])
