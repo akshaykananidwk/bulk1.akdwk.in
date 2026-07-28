@@ -11,6 +11,7 @@ uploads/*
 !storage/**/.gitkeep
 !uploads/.gitkeep
 !uploads/.htaccess
-vendor/
+/vendor/
 node_modules/
+!assets/vendor/
 storage/.htaccess_shipped_hash
