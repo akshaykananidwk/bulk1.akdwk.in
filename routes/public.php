@@ -8,6 +8,15 @@ declare(strict_types=1);
 
 use App\Core\Router;
 
+// Marketing + legal pages
+Router::get('/pricing', [\App\Controllers\PublicSite\SiteController::class, 'pricing'])->name('pricing');
+Router::get('/privacy-policy', [\App\Controllers\PublicSite\SiteController::class, 'privacy'])->name('privacy');
+Router::get('/terms', [\App\Controllers\PublicSite\SiteController::class, 'terms'])->name('terms');
+Router::get('/data-deletion', [\App\Controllers\PublicSite\SiteController::class, 'dataDeletion'])->name('data_deletion');
+Router::get('/refund-policy', [\App\Controllers\PublicSite\SiteController::class, 'refund'])->name('refund');
+Router::get('/contact', [\App\Controllers\PublicSite\SiteController::class, 'contact'])->name('contact');
+Router::post('/contact', [\App\Controllers\PublicSite\SiteController::class, 'contactSubmit'], ['csrf', 'throttle:5,5']);
+
 Router::get('/q/{slug}', [\App\Controllers\PublicSite\QrRedirectController::class, 'handle'])
     ->where('slug', '[A-Za-z0-9]+')->name('qr.redirect');
 

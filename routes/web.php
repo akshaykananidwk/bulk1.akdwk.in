@@ -9,12 +9,7 @@ declare(strict_types=1);
 use App\Core\Auth;
 use App\Core\Router;
 
-Router::get('/', function () {
-    if (Auth::check()) {
-        \App\Core\Response::redirect(Auth::isSuperAdmin() ? '/admin' : '/tenant');
-    }
-    \App\Core\Response::redirect('/login');
-})->name('home');
+Router::get('/', [\App\Controllers\PublicSite\SiteController::class, 'home'])->name('home');
 
 // Real-time
 Router::get('/sse/stream', [\App\Controllers\Tenant\SseController::class, 'stream'], ['auth'])->name('sse.stream');
