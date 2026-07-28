@@ -67,9 +67,33 @@
                 <div class="flex gap-2">
                     <button class="btn btn-primary" type="submit"><?= e(__('common.save', 'Save')) ?></button>
                     <button class="btn btn-outline" type="button" x-on:click="testConnection()"><?= e(__('update.test', 'Test Connection')) ?></button>
+                    <button class="btn btn-outline" type="button" x-on:click="runDiagnostics()" :disabled="diagRunning">
+                        🩺 <span x-text="diagRunning ? '<?= e(__('update.diag_running', 'Checking…')) ?>' : '<?= e(__('update.diagnostics', 'Run Diagnostics')) ?>'"></span>
+                    </button>
                 </div>
                 <div class="mt-2 text-sm" x-show="connMessage" x-text="connMessage" :style="connOk ? 'color:var(--success)' : 'color:var(--danger)'"></div>
             </form>
+
+            <!-- Diagnostics results -->
+            <div class="mt-4" x-show="diag.length" x-cloak>
+                <h4 style="margin-bottom:.4rem">🩺 <?= e(__('update.diag_results', 'Diagnostics')) ?></h4>
+                <div class="table-wrap" style="border:none">
+                    <table class="table">
+                        <tbody>
+                        <template x-for="(d, i) in diag" :key="i">
+                            <tr>
+                                <td style="width:28px" x-text="d.ok === true ? '✅' : (d.ok === false ? '❌' : '⚠️')"></td>
+                                <td>
+                                    <span class="font-semi" x-text="d.label"></span>
+                                    <div class="text-xs" style="word-break:break-word" :style="d.ok === false ? 'color:var(--danger)' : 'color:var(--text-muted)'" x-text="d.value"></div>
+                                    <div class="text-xs" style="color:var(--warning)" x-show="d.ok !== true && d.hint" x-text="d.hint"></div>
+                                </td>
+                            </tr>
+                        </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
 
         <!-- Check / update card -->
@@ -208,11 +232,22 @@ function updatesApp() {
     return {
         check: null, checking: false, checkError: '',
         connMessage: '', connOk: false,
+        diag: [], diagRunning: false,
         password: '', running: <?= $updateRunning ? 'true' : 'false' ?>,
         progress: [], finalState: '', integrity: null,
         source: null,
 
         init() { if (this.running) { this.followProgress(); } },
+
+        runDiagnostics() {
+            this.diagRunning = true;
+            this.diag = [];
+            kwc.fetch('<?= e(url('/admin/updates/diagnostics')) ?>').then(r => {
+                this.diagRunning = false;
+                if (r.ok) { this.diag = r.data.data.checks; }
+                else { kwc.toast(r.data.message || 'Diagnostics failed', 'danger'); }
+            });
+        },
 
         testConnection() {
             this.connMessage = '…';

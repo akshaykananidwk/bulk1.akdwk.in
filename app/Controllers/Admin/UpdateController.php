@@ -216,4 +216,91 @@ final class UpdateController extends Controller
             $this->fail($e->getMessage(), 422);
         }
     }
+
+    /**
+     * Server-side diagnostics: pinpoints exactly why Test/Check/Update fails
+     * on THIS server (network, SSL CA, DNS, token, settings, permissions).
+     */
+    public function diagnostics(Request $request): never
+    {
+        $checks = [];
+        $add = function (string $label, ?bool $ok, string $value, string $hint = '') use (&$checks): void {
+            $checks[] = ['label' => $label, 'ok' => $ok, 'value' => $value, 'hint' => $hint];
+        };
+
+        // 1. PHP environment
+        $add('PHP ≥ 8.3', version_compare(PHP_VERSION, '8.3.0', '>='), PHP_VERSION, 'aaPanel → App Store → PHP 8.3 install karo.');
+        $add('cURL extension', extension_loaded('curl'), extension_loaded('curl') ? 'loaded' : 'missing', 'aaPanel → PHP → Install extensions → curl.');
+        $add('ZipArchive (zip)', class_exists(\ZipArchive::class), class_exists(\ZipArchive::class) ? 'available' : 'missing', 'aaPanel → PHP → Install extensions → zip.');
+        $add('OpenSSL', extension_loaded('openssl'), extension_loaded('openssl') ? 'loaded' : 'missing', 'Required for HTTPS + token encryption.');
+
+        // 2. CA bundle (the most common aaPanel HTTPS failure)
+        $cainfo = (string) ini_get('curl.cainfo');
+        $cafile = (string) ini_get('openssl.cafile');
+        $bundleOk = ($cainfo !== '' && is_file($cainfo)) || ($cafile !== '' && is_file($cafile));
+        $systemBundle = is_file('/etc/ssl/certs/ca-certificates.crt') || is_file('/etc/pki/tls/certs/ca-bundle.crt');
+        $add(
+            'SSL CA bundle',
+            $bundleOk || $systemBundle ? true : null,
+            $cainfo !== '' ? ('curl.cainfo=' . $cainfo) : ($systemBundle ? 'system bundle present' : 'not configured'),
+            'Jo niche HTTPS fail thay: PHP settings ma curl.cainfo = /etc/ssl/certs/ca-certificates.crt set karo.'
+        );
+
+        // 3. DNS
+        $ip = gethostbyname('api.github.com');
+        $dnsOk = $ip !== 'api.github.com' && filter_var($ip, FILTER_VALIDATE_IP) !== false;
+        $add('DNS: api.github.com', $dnsOk, $dnsOk ? $ip : 'NOT RESOLVING', 'Server nu DNS kharab che — /etc/resolv.conf check karo (8.8.8.8 nakho).');
+
+        // 4. Outbound HTTPS to GitHub (any HTTP status = reachable)
+        $apiBase = rtrim((string) (setting('update_github_api_base', '') ?: 'https://api.github.com'), '/');
+        $probe = \App\Core\Http::make()->timeout(15)->get($apiBase . '/');
+        if ($probe->error !== null && $probe->status === 0) {
+            $add('Outbound HTTPS → GitHub API', false, $probe->error, GithubClient::networkErrorMessage($probe->error));
+        } else {
+            $add('Outbound HTTPS → GitHub API', true, 'reachable (HTTP ' . $probe->status . ')');
+        }
+
+        // 5. Saved settings state
+        $owner = (string) setting('update_github_owner', '');
+        $repo = (string) setting('update_github_repo', '');
+        $branch = (string) setting('update_github_branch', '');
+        $tokenSaved = (string) setting('update_github_token', '') !== '';
+        $add('Repo settings saved', $owner !== '' && $repo !== '', $owner !== '' ? ($owner . '/' . $repo . ' @ ' . $branch) : 'NOT SAVED', 'Upar "owner/repo" bhari ne Save dabavo — pachhi aa page par pacha aavo.');
+        $add('GitHub token saved', $tokenSaved ? true : null, $tokenSaved ? 'yes (encrypted)' : 'no', 'Private repo mate token FARJIYAT che (fine-grained, Contents: Read).');
+        if ($tokenSaved) {
+            $decryptable = \App\Core\Crypt::decrypt((string) setting('update_github_token', '')) !== null;
+            $add('Token decryptable (APP_KEY ok)', $decryptable, $decryptable ? 'yes' : 'NO — re-enter the token', 'config.php badlayu hoy to token fari nakhvo padse.');
+        }
+
+        // 6. Real repo access (the actual Test Connection, with the saved creds)
+        if ($owner !== '' && $repo !== '') {
+            try {
+                $client = new GithubClient();
+                $info = $client->repoInfo();
+                $add('Repository access', true, (string) ($info['full_name'] ?? '') . (($info['private'] ?? false) ? ' (private)' : ' (public)'));
+                try {
+                    $head = $client->latestCommit();
+                    $add('Branch "' . $branch . '" access', true, 'HEAD ' . substr((string) ($head['sha'] ?? ''), 0, 7));
+                } catch (\Throwable $e) {
+                    $add('Branch "' . $branch . '" access', false, $e->getMessage(), 'Branch nu name exact check karo (GitHub par je che e j).');
+                }
+            } catch (\Throwable $e) {
+                $add('Repository access', false, $e->getMessage());
+            }
+        }
+
+        // 7. Filesystem
+        $tmpOk = is_dir(STORAGE_PATH . '/tmp') ? is_writable(STORAGE_PATH . '/tmp') : @mkdir(STORAGE_PATH . '/tmp', 0755, true);
+        $add('storage/tmp writable', (bool) $tmpOk, $tmpOk ? 'writable' : 'NOT WRITABLE', 'chown -R www:www storage && chmod -R 755 storage');
+        $add('Root writable (file copy)', is_writable(ROOT_PATH), is_writable(ROOT_PATH) ? 'writable' : 'NOT WRITABLE', 'chown -R www:www ' . ROOT_PATH);
+        $free = (float) @disk_free_space(STORAGE_PATH);
+        $add('Free disk ≥ 500MB', $free > 500 * 1048576, \App\Core\Str::humanBytes($free), 'Disk bharai gayi che — old backups/logs saaf karo.');
+
+        // Installed SHA state (info only)
+        $sha = (string) setting('installed_commit_sha', '');
+        $add('Installed commit SHA', $sha !== '' ? true : null, $sha !== '' ? substr($sha, 0, 12) : 'not set (first update will set it)', 'Pehli vaar "Check for Update" chalavva mate jaruri nathi — Update Now pachhi automatic set thase.');
+
+        audit_log('update.diagnostics_run');
+        $this->ok(['checks' => $checks]);
+    }
 }

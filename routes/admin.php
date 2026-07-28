@@ -70,4 +70,5 @@ Router::group(['prefix' => '/admin', 'middleware' => ['auth', 'admin', 'csrf'], 
     Router::get('/updates/stream', [\App\Controllers\Admin\UpdateController::class, 'stream'], ['permission:update.manage']);
     Router::post('/updates/rollback/{id}', [\App\Controllers\Admin\UpdateController::class, 'rollback'], ['permission:update.manage'])->where('id', '\d+');
     Router::get('/updates/verify', [\App\Controllers\Admin\UpdateController::class, 'verifyIntegrity'], ['permission:update.manage']);
+    Router::get('/updates/diagnostics', [\App\Controllers\Admin\UpdateController::class, 'diagnostics'], ['permission:update.manage']);
 });

@@ -158,11 +158,41 @@ final class GithubClient
             Logger::channel('update')->warning('GitHub rate limit low', ['remaining' => $remaining]);
         }
 
+        // Network-level failure (curl error, no HTTP status): explain the
+        // server-side cause instead of a cryptic "HTTP 0".
+        if ($response->status === 0 || $response->error !== null && $response->status === 0) {
+            throw new \RuntimeException(self::networkErrorMessage((string) $response->error));
+        }
+
         $data = $response->json();
         if (!$response->ok()) {
-            $message = (string) ($data['message'] ?? ('HTTP ' . $response->status));
-            throw new \RuntimeException('GitHub API error: ' . Logger::redact($message) . ' (HTTP ' . $response->status . ')');
+            $githubMessage = (string) ($data['message'] ?? '');
+            $friendly = match (true) {
+                $response->status === 404 => __('update.err_404', 'Repository not found (HTTP 404). Check the owner/repo spelling — and for a PRIVATE repository you MUST save a GitHub token (fine-grained, Contents: Read).'),
+                $response->status === 401 => __('update.err_401', 'GitHub token is invalid or expired (HTTP 401). Generate a new fine-grained token with Contents: Read access to this repository and save it again.'),
+                $response->status === 403 && stripos($githubMessage, 'rate limit') !== false => __('update.err_rate', 'GitHub rate limit reached (HTTP 403). Save a GitHub token to get a much higher limit, or wait an hour.'),
+                $response->status === 403 => __('update.err_403', 'GitHub refused access (HTTP 403).') . ($githubMessage !== '' ? ' — ' . $githubMessage : ''),
+                default => 'GitHub API error: ' . ($githubMessage !== '' ? $githubMessage : 'HTTP ' . $response->status) . ' (HTTP ' . $response->status . ')',
+            };
+            throw new \RuntimeException(Logger::redact($friendly));
         }
         return $data;
+    }
+
+    /**
+     * Translate a curl-level failure into an actionable server-fix message.
+     */
+    public static function networkErrorMessage(string $curlError): string
+    {
+        $lower = strtolower($curlError);
+        $hint = __('update.net_generic', 'The server cannot reach api.github.com — check that outbound HTTPS (port 443) is allowed in the firewall.');
+        if (str_contains($lower, 'certificate') || str_contains($lower, 'ssl')) {
+            $hint = __('update.net_ssl', 'SSL certificate verification failed on this server. Fix: in aaPanel → PHP settings set curl.cainfo = /etc/ssl/certs/ca-certificates.crt (or run "yum/apt install ca-certificates"), then restart PHP.');
+        } elseif (str_contains($lower, 'resolve') || str_contains($lower, 'name lookup')) {
+            $hint = __('update.net_dns', 'DNS failure — this server cannot resolve api.github.com. Check /etc/resolv.conf or the aaPanel DNS settings.');
+        } elseif (str_contains($lower, 'timed out') || str_contains($lower, 'timeout')) {
+            $hint = __('update.net_timeout', 'Connection timed out — a firewall is probably blocking outbound HTTPS to GitHub (common on some VPS providers; whitelist api.github.com).');
+        }
+        return __('update.net_prefix', 'Cannot reach GitHub') . ': ' . $curlError . ' — ' . $hint;
     }
 }
