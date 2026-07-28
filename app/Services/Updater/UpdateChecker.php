@@ -125,7 +125,7 @@ final class UpdateChecker
             'created_at' => now(),
         ]);
 
-        $email = (string) setting('update_notify_email', setting('alert_email', ''));
+        $email = ((string) setting('update_notify_email', '') ?: (string) setting('alert_email', ''));
         if ($email !== '') {
             Mail::make()
                 ->to($email)

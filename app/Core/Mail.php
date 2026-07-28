@@ -10,6 +10,9 @@ namespace App\Core;
  */
 final class Mail
 {
+    /** Last send failure reason — shown in the admin UI, never swallowed. */
+    public static ?string $lastError = null;
+
     private array $to = [];
     private string $subject = '';
     private string $htmlBody = '';
@@ -128,22 +131,54 @@ final class Mail
             $body = chunk_split(base64_encode($text));
         }
 
+        self::$lastError = null;
+
         if (($config['driver'] ?? 'mail') === 'smtp' && !empty($config['host'])) {
             try {
-                return $this->sendSmtp($config, $fromEmail, $headers, $body);
+                $sent = $this->sendSmtp($config, $fromEmail, $headers, $body);
+                self::recordResult(true);
+                return $sent;
             } catch (\Throwable $e) {
-                Logger::channel('app')->error('SMTP send failed', ['error' => $e->getMessage()]);
+                self::$lastError = 'SMTP: ' . $e->getMessage();
+                Logger::channel('mail')->error('SMTP send failed', ['to' => array_map(fn ($t) => $t[0], $this->to), 'error' => $e->getMessage()]);
+                self::recordResult(false);
                 return false;
             }
         }
 
-        // mail() fallback
+        // mail() fallback — most VPS/aaPanel servers have NO local sendmail,
+        // so a false here almost always means "configure SMTP".
         $headerString = '';
         foreach ($headers as $name => $value) {
             $headerString .= $name . ': ' . $value . "\r\n";
         }
         $toString = implode(', ', array_map(fn ($t) => self::encodeAddress($t[0], $t[1]), $this->to));
-        return @mail($toString, self::encodeHeader($this->subject), $body, $headerString);
+        $sent = @mail($toString, self::encodeHeader($this->subject), $body, $headerString);
+        if (!$sent) {
+            self::$lastError = __('mail.no_sendmail', "PHP mail() failed — this server has no sendmail configured. Set up SMTP in Admin → Global Settings → Mail (driver: smtp) with your email provider's details.");
+            Logger::channel('mail')->error('mail() send failed', ['to' => $toString]);
+        }
+        self::recordResult($sent);
+        return $sent;
+    }
+
+    /**
+     * Persist the last mail outcome so the admin UI can show WHY email
+     * is not going out (settings table may be absent during install).
+     */
+    private static function recordResult(bool $sent): void
+    {
+        try {
+            if ($sent) {
+                set_setting('mail_last_error', '');
+                set_setting('mail_last_success_at', now());
+            } else {
+                set_setting('mail_last_error', (string) self::$lastError);
+                set_setting('mail_last_error_at', now());
+            }
+        } catch (\Throwable) {
+            // installer / early-boot context — file log already has it
+        }
     }
 
     private function sendSmtp(array $config, string $fromEmail, array $headers, string $body): bool

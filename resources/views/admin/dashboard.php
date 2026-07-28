@@ -9,6 +9,33 @@ Layout::pushScript(url('/assets/vendor/apexcharts.min.js'));
     <h1><?= e(__('admin.dashboard_title', 'Platform overview')) ?></h1>
 </div>
 
+<?php if (!empty($cronStale)): ?>
+    <div class="alert alert-danger">
+        <span>⏰</span>
+        <div>
+            <strong><?= e(__('admin.cron_down', 'Cron is NOT running!')) ?></strong>
+            <?= e(__('admin.cron_down_body', 'WhatsApp messages, campaigns, emails and updates are all stuck in the queue until cron runs. Add this cron entry (every minute) on the server:')) ?>
+            <div class="input-group mt-1">
+                <input class="input" readonly value="<?= e($cronCommand) ?>" style="font-family:monospace;font-size:.78rem">
+                <button class="btn btn-outline" type="button" data-copy="<?= e($cronCommand) ?>">📋</button>
+            </div>
+            <div class="text-xs mt-1"><?= e(__('admin.cron_aapanel', 'aaPanel: Cron → Add Task → Shell Script → period "1 minute" → paste the php command (without the * * * * * part).')) ?>
+                <?= $cronLastRun !== null ? e(__('admin.cron_last', 'Last run: ') . time_ago(date('Y-m-d H:i:s', (int) $cronLastRun))) : e(__('admin.cron_never', 'It has never run.')) ?></div>
+        </div>
+    </div>
+<?php endif; ?>
+
+<?php if (!empty($mailLastError)): ?>
+    <div class="alert alert-warning">
+        <span>📧</span>
+        <div>
+            <strong><?= e(__('admin.mail_failing', 'Emails are failing!')) ?></strong>
+            <code style="word-break:break-word"><?= e(\App\Core\Str::limit($mailLastError, 160)) ?></code>
+            — <a href="<?= e(url('/admin/settings')) ?>"><?= e(__('admin.fix_mail', 'Fix mail settings')) ?> →</a>
+        </div>
+    </div>
+<?php endif; ?>
+
 <div class="stat-grid">
     <div class="card stat-card">
         <span class="stat-label">MRR</span>

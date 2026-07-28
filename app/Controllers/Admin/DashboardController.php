@@ -47,11 +47,19 @@ final class DashboardController extends Controller
             ->where('created_at', '>=', date('Y-m-d 00:00:00', strtotime('-29 days')))
             ->groupBy('d')->orderBy('d')->get();
 
+        $heartbeat = \App\Core\Scheduler::lastHeartbeat();
+        $cronStale = $heartbeat === null || (time() - $heartbeat) > 180;
+        $phpBinary = PHP_BINARY !== '' && !str_contains(PHP_BINARY, 'fpm') ? PHP_BINARY : '/usr/bin/php';
+
         Layout::title(__('nav.dashboard', 'Dashboard'));
         View::render('admin/dashboard', [
             'stats' => $stats,
             'recentTenants' => $recentTenants,
             'revenue' => $revenue,
+            'cronStale' => $cronStale,
+            'cronLastRun' => $heartbeat,
+            'cronCommand' => '* * * * * ' . $phpBinary . ' ' . ROOT_PATH . '/cron/scheduler.php >> /dev/null 2>&1',
+            'mailLastError' => (string) setting('mail_last_error', ''),
         ], 'layouts/admin');
     }
 }

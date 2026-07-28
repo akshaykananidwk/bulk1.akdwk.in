@@ -66,39 +66,50 @@ final class UpdateController extends Controller
             }
         }
 
+        // Only 3 things are asked: repo (owner/repo), branch, token.
+        // Everything else keeps sensible defaults (channel=branch,
+        // daily check on, 5 backups, alerts to the platform email).
         $data = $this->validate($request, [
             'github_owner' => 'required|regex:/^[A-Za-z0-9-]+$/|max:100',
             'github_repo' => 'required|regex:/^[A-Za-z0-9_.-]+$/|max:100',
             'github_branch' => 'required|string|max:100',
             'github_token' => 'nullable|string|max:255',
-            'update_channel' => 'required|in:branch,release_tag',
-            'notify_email' => 'nullable|email',
-            'keep_backups' => 'required|integer|between:1,20',
         ]);
 
         set_setting('update_github_owner', (string) $data['github_owner']);
         set_setting('update_github_repo', (string) $data['github_repo']);
         set_setting('update_github_branch', (string) $data['github_branch']);
-        set_setting('update_channel', (string) $data['update_channel']);
-        set_setting('update_auto_check', $request->bool('auto_check') ? '1' : '0');
-        set_setting('update_auto_install', $request->bool('auto_install') ? '1' : '0');
-        set_setting('update_notify_email', (string) ($data['notify_email'] ?? ''));
-        set_setting('update_keep_backups', (string) $data['keep_backups']);
 
         // Token only overwritten when a new one is supplied (masked in UI)
         if (!empty($data['github_token']) && !str_contains((string) $data['github_token'], '•')) {
             set_setting('update_github_token', Crypt::encrypt((string) $data['github_token']));
         }
 
-        // Allow manually pinning the installed SHA (first-time setup)
-        $pinnedSha = $request->str('installed_sha');
-        if ($pinnedSha !== '' && preg_match('/^[0-9a-f]{7,40}$/i', $pinnedSha)) {
-            set_setting('installed_commit_sha', strtolower($pinnedSha));
-        }
-
         \App\Core\Cache::forget('update_check');
         audit_log('update.settings_saved');
-        Redirect::to('/admin/updates')->with('success', __('update.settings_saved', 'Update settings saved.'))->send();
+
+        // First save: pin the installed SHA to the branch head automatically
+        // so "Check for Update" has a baseline (no manual SHA field needed).
+        $message = __('update.settings_saved', 'Update settings saved.');
+        if ((string) setting('installed_commit_sha', '') === '') {
+            try {
+                $client = new GithubClient(
+                    (string) $data['github_owner'],
+                    (string) $data['github_repo'],
+                    (string) $data['github_branch']
+                );
+                $head = $client->latestCommit();
+                $sha = (string) ($head['sha'] ?? '');
+                if ($sha !== '') {
+                    set_setting('installed_commit_sha', $sha);
+                    $message .= ' ' . __('update.sha_pinned', 'Connected — current version linked to commit :sha.', ['sha' => substr($sha, 0, 7)]);
+                }
+            } catch (\Throwable $e) {
+                $message .= ' ⚠️ ' . $e->getMessage();
+            }
+        }
+
+        Redirect::to('/admin/updates')->with('success', $message)->send();
     }
 
     public function testConnection(Request $request): never

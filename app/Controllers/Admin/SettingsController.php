@@ -62,15 +62,19 @@ final class SettingsController extends Controller
             }
         }
 
-        // Optional SMTP test
+        // Optional SMTP test — the EXACT failure reason is shown, never hidden
         if ($request->bool('send_test_mail')) {
             $to = (string) setting('alert_email', '');
-            if ($to !== '') {
-                $sent = Mail::make()->to($to)->subject('[Test] SMTP settings')->text('SMTP configuration works! — Krishna WhatsApp Cloud')->send();
-                if (!$sent) {
-                    Redirect::to('/admin/settings')->with('warning', __('admin.smtp_test_failed', 'Settings saved, but the test email failed — check SMTP credentials.'))->send();
-                }
+            if ($to === '') {
+                Redirect::to('/admin/settings')->with('warning', __('admin.test_mail_no_address', 'Settings saved, but no Alert email is set — enter it in the Alerts section first, then re-test.'))->send();
             }
+            $sent = Mail::make()->to($to)->subject('[Test] ' . setting('app_name', 'Krishna WhatsApp Cloud') . ' mail settings')
+                ->text('Mail configuration works! — ' . setting('app_name', 'Krishna WhatsApp Cloud'))->send();
+            if (!$sent) {
+                Redirect::to('/admin/settings')->with('error', __('admin.smtp_test_failed', 'Settings saved, but the test email FAILED: ')
+                    . (Mail::$lastError ?? __('admin.unknown_error', 'unknown error — see storage/logs/mail-*.log')))->send();
+            }
+            Redirect::to('/admin/settings')->with('success', __('admin.test_mail_ok', 'Settings saved and test email sent to :to — inbox (and spam folder) check karo.', ['to' => $to]))->send();
         }
 
         audit_log('admin.settings_updated');

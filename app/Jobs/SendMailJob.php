@@ -29,7 +29,8 @@ final class SendMailJob implements JobInterface
         }
 
         if (!$mail->send()) {
-            throw new \RuntimeException('Mail send failed to ' . $to);
+            throw new \RuntimeException('Mail send failed to ' . $to
+                . (Mail::$lastError !== null ? ' — ' . Mail::$lastError : ''));
         }
     }
 }

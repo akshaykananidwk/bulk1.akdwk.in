@@ -62,6 +62,19 @@
 
     <div class="card mb-2">
         <div class="card-header"><h2 class="card-title"><?= e(__('admin.settings_mail', 'Mail')) ?></h2></div>
+        <?php $mailLastError = (string) setting('mail_last_error', ''); ?>
+        <?php if ($mailLastError !== ''): ?>
+            <div class="alert alert-danger">
+                <span>📧</span>
+                <div>
+                    <strong><?= e(__('admin.mail_failing', 'Emails are failing!')) ?></strong>
+                    <?= e(__('admin.mail_last_error', 'Last error')) ?> (<?= e(\App\Core\DateHelper::display((string) setting('mail_last_error_at', ''))) ?>):<br>
+                    <code style="word-break:break-word"><?= e($mailLastError) ?></code>
+                </div>
+            </div>
+        <?php elseif ((string) setting('mail_last_success_at', '') !== ''): ?>
+            <div class="text-sm text-muted mb-2">✅ <?= e(__('admin.mail_last_ok', 'Last email sent successfully')) ?>: <?= e(\App\Core\DateHelper::display((string) setting('mail_last_success_at', ''))) ?></div>
+        <?php endif; ?>
         <div class="grid-3">
             <div class="form-group">
                 <label class="form-label"><?= e(__('admin.mail_driver', 'Driver')) ?></label>

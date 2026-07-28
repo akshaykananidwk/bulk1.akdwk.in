@@ -168,7 +168,7 @@ final class UpdateInstaller
             self::deleteDirectory($extractDir);
             BackupService::prune((int) setting('update_keep_backups', '5'));
 
-            $notifyEmail = (string) setting('update_notify_email', setting('alert_email', ''));
+            $notifyEmail = ((string) setting('update_notify_email', '') ?: (string) setting('alert_email', ''));
             if ($notifyEmail !== '') {
                 Mail::make()->to($notifyEmail)
                     ->subject('[' . setting('app_name', 'Krishna WhatsApp Cloud') . '] Updated to ' . $newVersion)
@@ -254,7 +254,7 @@ final class UpdateInstaller
 
             self::progress('R6', 'Update failed — system restored to previous version', 'rolled_back');
 
-            $email = (string) setting('update_notify_email', setting('alert_email', ''));
+            $email = ((string) setting('update_notify_email', '') ?: (string) setting('alert_email', ''));
             if ($email !== '') {
                 Mail::make()->to($email)
                     ->subject('[' . setting('app_name', 'Krishna WhatsApp Cloud') . '] Update FAILED — rolled back automatically')
@@ -275,7 +275,7 @@ final class UpdateInstaller
                 . ($filesBackup ?? 'n/a') . ' and ' . ($dbBackup ?? 'n/a')
                 . '. See storage/logs/update-*.log', 'fatal');
 
-            $email = (string) setting('update_notify_email', setting('alert_email', ''));
+            $email = ((string) setting('update_notify_email', '') ?: (string) setting('alert_email', ''));
             if ($email !== '') {
                 Mail::make()->to($email)
                     ->subject('[URGENT] Update rollback FAILED — manual recovery required')
