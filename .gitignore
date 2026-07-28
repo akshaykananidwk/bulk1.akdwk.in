@@ -13,3 +13,4 @@ uploads/*
 !uploads/.htaccess
 vendor/
 node_modules/
+storage/.htaccess_shipped_hash

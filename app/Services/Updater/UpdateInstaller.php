@@ -199,6 +199,22 @@ final class UpdateInstaller
         try {
             if ($filesBackup !== null && is_file($filesBackup)) {
                 self::progress('R1', 'Restoring files from backup', 'rollback');
+                // Remove files the failed update ADDED first — restoring the
+                // backup only overwrites, it cannot restore "absence".
+                $addedListFile = STORAGE_PATH . '/tmp/update_added_files.json';
+                if (is_file($addedListFile)) {
+                    $rootReal = realpath(ROOT_PATH);
+                    foreach ((array) json_decode((string) file_get_contents($addedListFile), true) as $relative) {
+                        if (!is_string($relative) || $relative === '' || str_contains($relative, '..')) {
+                            continue;
+                        }
+                        $target = ($rootReal ?: ROOT_PATH) . '/' . $relative;
+                        if (is_file($target)) {
+                            @unlink($target);
+                        }
+                    }
+                    @unlink($addedListFile);
+                }
                 BackupService::restoreFiles($filesBackup);
             }
             if ($dbBackup !== null && is_file($dbBackup)) {
@@ -460,6 +476,7 @@ final class UpdateInstaller
         }
 
         $copied = 0;
+        $addedFiles = [];
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($packageRoot, \FilesystemIterator::SKIP_DOTS),
             \RecursiveIteratorIterator::SELF_FIRST
@@ -486,6 +503,11 @@ final class UpdateInstaller
             if (is_file($target) && sha1_file($target) === sha1_file($file->getPathname())) {
                 continue;
             }
+            if (!is_file($target)) {
+                // Brand-new file: recorded so a rollback can remove it again
+                // (the pre-update backup cannot restore "absence").
+                $addedFiles[] = $relative;
+            }
 
             $directory = dirname($target);
             if (!is_dir($directory)) {
@@ -508,6 +530,12 @@ final class UpdateInstaller
         if (is_file($packageHtaccess)) {
             @file_put_contents(ROOT_PATH . '/storage/.htaccess_shipped_hash', sha1_file($packageHtaccess));
         }
+
+        // Persist the added-files list for rollback cleanup
+        @file_put_contents(
+            STORAGE_PATH . '/tmp/update_added_files.json',
+            json_encode($addedFiles, JSON_UNESCAPED_UNICODE)
+        );
 
         // Deletions from the manifest (same traversal guard)
         foreach ((array) ($manifest['delete'] ?? []) as $relative) {
