@@ -1,0 +1,15 @@
+config/config.php
+installed.lock
+storage/cache/*
+storage/logs/*
+storage/sessions/*
+storage/tmp/*
+storage/backups/*
+storage/locks/*
+storage/qr/*
+uploads/*
+!storage/**/.gitkeep
+!uploads/.gitkeep
+!uploads/.htaccess
+vendor/
+node_modules/

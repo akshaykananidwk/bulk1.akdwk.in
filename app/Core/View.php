@@ -31,7 +31,11 @@ final class View
         $content = self::renderFile($view, $data);
 
         if ($layout !== null) {
-            self::$sections['content'] = $content;
+            // A view may define its content either via View::start('content')/end()
+            // sections or as direct output — support both.
+            if (!isset(self::$sections['content'])) {
+                self::$sections['content'] = $content;
+            }
             $content = self::renderFile($layout, $data);
             self::$sections = [];
         }
