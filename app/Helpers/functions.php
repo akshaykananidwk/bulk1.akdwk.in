@@ -79,16 +79,15 @@ if (!function_exists('__')) {
     }
 }
 
-if (!function_exists('setting')) {
+if (!function_exists('settings_cache')) {
     /**
-     * Global setting from the settings table (cached per request).
+     * Per-request settings cache shared by setting()/set_setting() so a
+     * value written mid-request is immediately visible to later reads.
      */
-    function setting(string $key, mixed $default = null): mixed
+    function &settings_cache(): array
     {
         static $settings = null;
-        static $loaded = false;
-        if (!$loaded) {
-            $loaded = true;
+        if ($settings === null) {
             try {
                 $rows = DB::table('settings')->get();
                 $settings = [];
@@ -99,6 +98,17 @@ if (!function_exists('setting')) {
                 $settings = []; // DB not available (installer)
             }
         }
+        return $settings;
+    }
+}
+
+if (!function_exists('setting')) {
+    /**
+     * Global setting from the settings table (cached per request).
+     */
+    function setting(string $key, mixed $default = null): mixed
+    {
+        $settings = &settings_cache();
         return $settings[$key] ?? $default;
     }
 }
@@ -113,6 +123,8 @@ if (!function_exists('set_setting')) {
         } else {
             DB::table('settings')->insert(['key' => $key, 'value' => $stringValue]);
         }
+        $settings = &settings_cache();
+        $settings[$key] = $stringValue;
     }
 }
 
@@ -168,10 +180,14 @@ if (!function_exists('flash')) {
      */
     function flash(string $key, mixed $default = null): mixed
     {
-        if (isset($_SESSION['_flash']) && !isset($_SESSION['_flash_moved'])) {
-            $_SESSION['_flash_read'] = $_SESSION['_flash'];
-            unset($_SESSION['_flash']);
-            $_SESSION['_flash_moved'] = true;
+        // The "moved" marker must be per-REQUEST (static), never stored in
+        // the session — a session marker survives the request and freezes
+        // the flash queue forever (old message repeats, new ones never show).
+        static $moved = false;
+        if (!$moved) {
+            $moved = true;
+            $_SESSION['_flash_read'] = $_SESSION['_flash'] ?? [];
+            unset($_SESSION['_flash'], $_SESSION['_flash_moved']);
         }
         return $_SESSION['_flash_read'][$key] ?? $default;
     }
