@@ -161,7 +161,9 @@ final class Validator
                 }
                 return mb_strlen((string) $value) <= (int) $max;
             case 'between':
-                $len = is_numeric($value) && !is_string($value) ? (float) $value : mb_strlen((string) $value);
+                // HTTP input is always a string — numeric strings must be
+                // compared by VALUE, not by string length ("10" is 10, not 2)
+                $len = is_numeric($value) ? (float) $value : (is_array($value) ? count($value) : mb_strlen((string) $value));
                 return $len >= (float) ($params[0] ?? 0) && $len <= (float) ($params[1] ?? PHP_FLOAT_MAX);
             case 'in':
                 return in_array((string) $value, array_map('strval', $params), true);

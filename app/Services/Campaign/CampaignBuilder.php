@@ -193,7 +193,36 @@ final class CampaignBuilder
 
     private static function dispatchBatch(array $campaign): void
     {
+        $tenantId = (int) $campaign['tenant_id'];
+        Tenant::setId($tenantId);
+
+        // Anti-block: hold sends during quiet hours (campaign stays running)
+        if (self::inQuietHours()) {
+            return;
+        }
+
         $throttle = max(1, (int) $campaign['throttle_per_minute']);
+
+        // Human pacing: a random gap between sends caps how many fit per tick
+        $gapMin = max(0, (int) Tenant::setting('campaign_gap_min', 8));
+        $gapMax = max($gapMin, (int) Tenant::setting('campaign_gap_max', 20));
+        if ($gapMax > 0) {
+            $throttle = min($throttle, max(1, (int) floor(60 / max(1, ($gapMin + $gapMax) / 2))));
+        }
+
+        // Daily cap: manual limit and/or automatic warm-up for young numbers
+        $cap = self::dailyCap($tenantId);
+        if ($cap !== null) {
+            $sentToday = DB::table('messages')
+                ->where('tenant_id', $tenantId)
+                ->whereNotNull('campaign_id')
+                ->where('created_at', '>=', date('Y-m-d 00:00:00'))
+                ->count();
+            if ($sentToday >= $cap) {
+                return; // resumes automatically after midnight
+            }
+            $throttle = min($throttle, $cap - $sentToday);
+        }
 
         $pending = DB::table('campaign_recipients')
             ->where('campaign_id', $campaign['id'])
@@ -223,13 +252,68 @@ final class CampaignBuilder
             return;
         }
 
+        // Stagger sends across the minute with a random human-like gap
+        $delay = 0;
         foreach ($pending as $recipient) {
             DB::table('campaign_recipients')->where('id', $recipient['id'])->update(['status' => 'queued']);
             Queue::push(\App\Jobs\SendCampaignJob::class, [
                 'campaign_id' => (int) $campaign['id'],
                 'recipient_id' => (int) $recipient['id'],
-            ], 'campaign', 5, 0, (int) $campaign['tenant_id']);
+            ], 'campaign', 5, $delay, $tenantId);
+            if ($gapMax > 0) {
+                $delay += random_int(max(1, $gapMin), max(1, $gapMax));
+            }
         }
+    }
+
+    /**
+     * Quiet hours window from tenant settings ("21:00-09:00" style, may cross
+     * midnight). Empty or malformed = no quiet hours.
+     */
+    private static function inQuietHours(): bool
+    {
+        $quiet = trim((string) Tenant::setting('campaign_quiet_hours', ''));
+        if ($quiet === '' || !preg_match('/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/', $quiet, $m)) {
+            return false;
+        }
+        $now = (int) date('G') * 60 + (int) date('i');
+        $start = ((int) $m[1]) * 60 + (int) $m[2];
+        $end = ((int) $m[3]) * 60 + (int) $m[4];
+        if ($start === $end) {
+            return false;
+        }
+        return $start < $end ? ($now >= $start && $now < $end) : ($now >= $start || $now < $end);
+    }
+
+    /**
+     * Effective campaign messages/day cap: the tenant's manual cap and, when
+     * warm-up is on, an automatic ramp based on the WhatsApp number's age
+     * (young numbers get blocked fastest). null = unlimited.
+     */
+    private static function dailyCap(int $tenantId): ?int
+    {
+        $caps = [];
+        $manual = (int) Tenant::setting('campaign_daily_cap', 0);
+        if ($manual > 0) {
+            $caps[] = $manual;
+        }
+        if ((string) Tenant::setting('campaign_warmup', '1') === '1') {
+            $oldest = DB::table('phone_numbers')
+                ->where('tenant_id', $tenantId)
+                ->where('status', 'active')
+                ->orderBy('created_at')
+                ->first();
+            if ($oldest !== null) {
+                $ageDays = (int) floor((time() - strtotime((string) $oldest['created_at'])) / 86400);
+                foreach ([7 => 250, 14 => 500, 21 => 1000, 28 => 2000] as $days => $limit) {
+                    if ($ageDays < $days) {
+                        $caps[] = $limit;
+                        break;
+                    }
+                }
+            }
+        }
+        return $caps === [] ? null : min($caps);
     }
 
     public static function control(array $campaign, string $action): void

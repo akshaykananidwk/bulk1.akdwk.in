@@ -51,6 +51,14 @@ final class MessageSender
             throw new \RuntimeException(__('billing.message_limit', 'Monthly message limit reached. Upgrade your plan to continue sending.'));
         }
 
+        // Anti-block: automated replies (flows, auto-replies, API) mark the
+        // customer's last message read, show "typing…" and pause like a human
+        // before the message goes out. Agent replies (user_id) already type for
+        // real, and campaign sends are paced by the dispatcher instead.
+        if (empty($options['user_id']) && empty($options['campaign_id']) && ($options['humanize'] ?? true)) {
+            self::humanizeBeforeSend($conversation, $phoneNumber);
+        }
+
         $payload = self::buildPayload($normalizedType, (string) $contact['phone'], $content, $options);
 
         // Store first (status=queued) so nothing is lost if the API call dies
@@ -165,6 +173,42 @@ final class MessageSender
         }
 
         return self::send($conversation, $type, $content, $options);
+    }
+
+    /**
+     * WhatsApp only shows "typing…" while replying to a received message, so
+     * this needs a recent inbound wamid. Runs only in CLI workers — a web
+     * request must never hang for the typing pause.
+     */
+    private static function humanizeBeforeSend(array $conversation, array $phoneNumber): void
+    {
+        if (PHP_SAPI !== 'cli') {
+            return;
+        }
+        if ((string) Tenant::setting('humanize_typing', '1') !== '1') {
+            return;
+        }
+
+        $lastInbound = DB::table('messages')
+            ->where('conversation_id', (int) $conversation['id'])
+            ->where('direction', 'in')
+            ->whereNotNull('wamid')
+            ->orderBy('id', 'DESC')
+            ->first();
+        if ($lastInbound === null || strtotime((string) $lastInbound['created_at']) < time() - 86400) {
+            return;
+        }
+
+        try {
+            CloudApiClient::forPhoneNumber($phoneNumber)
+                ->markRead((string) $phoneNumber['phone_number_id'], (string) $lastInbound['wamid'], true);
+        } catch (\Throwable) {
+            return; // typing is best-effort — never delay a send that could not show it
+        }
+
+        // Meta keeps the indicator up for max ~25s or until the message lands
+        $base = (int) Tenant::setting('humanize_typing_seconds', 10);
+        sleep(max(3, min(25, $base + random_int(-3, 3))));
     }
 
     // -- Payload construction ---------------------------------------------------
