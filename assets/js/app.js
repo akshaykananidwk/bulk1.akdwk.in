@@ -38,6 +38,8 @@
     };
 
     // -- Toasts ---------------------------------------------------------------
+    // Max 3 on screen, 5s each, identical messages are not stacked, click to close.
+    var TOAST_MAX = 3;
     kwc.toast = function (message, type, timeout) {
         var stack = document.querySelector('.toast-stack');
         if (!stack) {
@@ -45,16 +47,40 @@
             stack.className = 'toast-stack';
             document.body.appendChild(stack);
         }
-        var el = document.createElement('div');
-        el.className = 'toast toast-' + (type || 'info');
-        el.setAttribute('role', 'status');
-        el.textContent = message;
-        stack.appendChild(el);
-        setTimeout(function () {
-            el.style.opacity = '0';
-            el.style.transition = 'opacity .25s';
-            setTimeout(function () { el.remove(); }, 300);
-        }, timeout || 4000);
+        var text = String(message == null ? '' : message);
+        var el = null;
+        Array.prototype.forEach.call(stack.children, function (child) {
+            if (child.textContent === text) { el = child; }
+        });
+        if (el) {
+            clearTimeout(el._kwcTimer); // same message again: just keep it up longer
+        } else {
+            el = document.createElement('div');
+            el.className = 'toast toast-' + (type || 'info');
+            el.setAttribute('role', 'status');
+            el.textContent = text;
+            el.title = 'Click to dismiss';
+            el.style.cursor = 'pointer';
+            el.addEventListener('click', function () { dismiss(el); });
+            stack.appendChild(el);
+            while (stack.children.length > TOAST_MAX) { stack.removeChild(stack.firstChild); }
+        }
+        el._kwcTimer = setTimeout(function () { dismiss(el); }, timeout || 5000);
+    };
+    function dismiss(el) {
+        clearTimeout(el._kwcTimer);
+        el.style.transition = 'opacity .25s';
+        el.style.opacity = '0';
+        setTimeout(function () { if (el.parentNode) { el.parentNode.removeChild(el); } }, 300);
+    }
+
+    /**
+     * Toast for background realtime events: skipped while the tab is hidden
+     * (the browser delays timers there, so they would all pile up on return).
+     */
+    kwc.liveToast = function (message, type) {
+        if (document.hidden) { return; }
+        kwc.toast(message, type, 5000);
     };
 
     // -- Confirm dialogs (SweetAlert2 when present) ---------------------------

@@ -98,7 +98,7 @@ Layout::title(__('inbox.title', 'Team Inbox'));
                                 <template x-if="m.media_url && m.type === 'document'">
                                     <a :href="m.media_url" target="_blank" rel="noopener">📄 <span x-text="m.body"></span></a>
                                 </template>
-                                <span x-show="!(m.media_url && m.type === 'document')" x-text="m.body"></span>
+                                <span class="bubble-text" x-show="m.body && !(m.media_url && m.type === 'document')" x-text="m.body"></span>
                                 <span class="meta">
                                     <span x-text="m.time_label"></span>
                                     <span x-show="m.direction === 'out'" x-text="statusTick(m.status)" :style="m.status === 'read' ? 'color:#3B82F6' : ''"></span>
@@ -198,7 +198,7 @@ function inboxApp() {
                     this.loadMessages(false);
                     if (p.direction === 'in') { this.markRead(); this.refreshWindow(); }
                 } else if (p.direction === 'in') {
-                    kwc.toast((p.contact_name || '') + ': ' + (p.preview || ''), 'info');
+                    kwc.liveToast((p.contact_name || '') + ': ' + (p.preview || ''), 'info');
                 }
                 this.loadList();
             });
@@ -212,6 +212,8 @@ function inboxApp() {
             });
             kwcRealtime.on('conversation.assigned', () => this.loadList());
             kwcRealtime.on('typing', (p) => {
+                // Only teammates' typing — never our own echo
+                if (Number(p.user_id) === <?= (int) \App\Core\Auth::id() ?>) { return; }
                 if (this.current && p.conversation_id === this.current.id && p.name) {
                     this.typingLabel = p.name + ' <?= e(__('inbox.is_typing', 'is typing…')) ?>';
                     clearTimeout(this.typingTimer);

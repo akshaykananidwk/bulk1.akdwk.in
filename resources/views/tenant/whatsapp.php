@@ -7,6 +7,11 @@
     </div>
 </div>
 
+<?php
+// Tenant of the business that owns the Meta App (setting platform_owner_tenant_id, default #1)
+$isPlatformOwner = \App\Core\Auth::isSuperAdmin() || \App\Core\Auth::isImpersonating()
+    || (int) \App\Core\Tenant::id() === (int) setting('platform_owner_tenant_id', '1');
+?>
 <?php if (empty($wabas)): ?>
     <div class="card text-center" style="padding:3rem">
         <div style="font-size:3rem">📱</div>
@@ -26,6 +31,13 @@
         <?php if ($metaApp !== null && !empty($metaApp['config_id'])): ?>
             <div style="display:flex;justify-content:center;text-align:left"><?php View::partial('partials/coexistence-notice', ['compact' => true]); ?></div>
         <?php endif; ?>
+        <?php if ($isPlatformOwner): ?>
+    <div class="alert alert-warning mt-2" style="text-align:left">
+        <span>🏢</span>
+        <div class="text-sm"><strong><?= e(__('whatsapp.owner_note_title', 'Platform owner:')) ?></strong>
+            <?= e(__('whatsapp.owner_note', 'use Manual connect with a System User token. Meta does not let Embedded Signup select the business that owns the Meta App.')) ?></div>
+    </div>
+<?php endif; ?>
     </div>
 <?php else: ?>
     <?php foreach ($wabas as $waba): ?>
@@ -49,6 +61,35 @@
                     </form>
                 </div>
             </div>
+            <?php if ($waba['status'] === 'error'): ?>
+                <?php
+                $reason = (string) ($waba['status_reason'] ?? '');
+                if ($reason === '') {
+                    $expired = !empty($waba['token_expires_at']) && strtotime((string) $waba['token_expires_at']) < time();
+                    $reason = $expired
+                        ? __('whatsapp.reason_token_expired', 'Access token expired')
+                        : __('whatsapp.reason_unknown', 'Connection problem — the access token has probably expired or been revoked. Click Refresh to re-check.');
+                }
+                $viaSignup = in_array($waba['token_mode'], ['embedded_signup', 'coexistence'], true) && $metaApp !== null && !empty($metaApp['config_id']);
+                $firstNumber = '';
+                foreach ($numbers as $n) {
+                    if ((int) $n['waba_account_id'] === (int) $waba['id']) { $firstNumber = (string) $n['phone_number_id']; break; }
+                }
+                ?>
+                <div class="alert alert-danger" style="margin:0 1rem 1rem">
+                    <span>⚠️</span>
+                    <div style="flex:1">
+                        <strong><?= e(__('whatsapp.not_working', 'This account is not working:')) ?></strong> <?= e($reason) ?>
+                        <div class="text-sm mt-1"><?= e(__('whatsapp.reconnect_hint', 'Messages cannot be sent or received until you reconnect.')) ?></div>
+                    </div>
+                    <?php if ($viaSignup): ?>
+                        <button class="btn btn-primary btn-sm js-es-btn" data-mode="<?= $waba['token_mode'] === 'coexistence' ? 'coexistence' : 'cloud' ?>">🔁 <?= e(__('whatsapp.reconnect', 'Reconnect')) ?></button>
+                    <?php else: ?>
+                        <button class="btn btn-primary btn-sm" type="button"
+                                onclick="kwcOpenManual(<?= e(json_encode((string) $waba['waba_id'])) ?>, <?= e(json_encode($firstNumber)) ?>)">🔁 <?= e(__('whatsapp.reconnect', 'Reconnect')) ?></button>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
             <?php if ($waba['token_mode'] === 'coexistence'): ?>
                 <?php View::partial('partials/coexistence-notice'); ?>
             <?php endif; ?>
@@ -90,6 +131,13 @@
     <?php if ($metaApp !== null && !empty($metaApp['config_id'])): ?>
         <div class="mb-4" style="margin-top:-.75rem"><?php View::partial('partials/coexistence-notice', ['compact' => true]); ?></div>
     <?php endif; ?>
+    <div class="mb-4"><?php if ($isPlatformOwner): ?>
+    <div class="alert alert-warning mt-2" style="text-align:left">
+        <span>🏢</span>
+        <div class="text-sm"><strong><?= e(__('whatsapp.owner_note_title', 'Platform owner:')) ?></strong>
+            <?= e(__('whatsapp.owner_note', 'use Manual connect with a System User token. Meta does not let Embedded Signup select the business that owns the Meta App.')) ?></div>
+    </div>
+<?php endif; ?></div>
 <?php endif; ?>
 
 <div class="card">
@@ -100,6 +148,15 @@
         <button class="btn btn-outline" type="button" data-copy="<?= e($webhookUrl) ?>">📋</button>
     </div>
 </div>
+
+<script>
+// Reconnect for manually connected accounts: open Manual connect pre-filled
+function kwcOpenManual(wabaId, phoneId) {
+    document.getElementById('manual-waba-id').value = wabaId || '';
+    document.getElementById('manual-phone-id').value = phoneId || '';
+    document.getElementById('manual-modal').classList.remove('hidden');
+}
+</script>
 
 <!-- Manual connect modal -->
 <div id="manual-modal" class="modal-backdrop hidden">
@@ -113,11 +170,11 @@
                 <?= csrf_field() ?>
                 <div class="form-group">
                     <label class="form-label">WABA ID</label>
-                    <input class="input" name="waba_id" required placeholder="102xxxxxxxxxxxxx">
+                    <input class="input" name="waba_id" id="manual-waba-id" required placeholder="102xxxxxxxxxxxxx">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Phone Number ID</label>
-                    <input class="input" name="phone_number_id" required placeholder="119xxxxxxxxxxxxx">
+                    <input class="input" name="phone_number_id" id="manual-phone-id" required placeholder="119xxxxxxxxxxxxx">
                 </div>
                 <div class="form-group">
                     <label class="form-label"><?= e(__('whatsapp.permanent_token', 'Permanent access token')) ?></label>

@@ -645,6 +645,7 @@ CREATE TABLE IF NOT EXISTS `waba_accounts` (
   `token_expires_at` DATETIME NULL,
   `token_expiry_warned_at` DATETIME NULL,
   `status` ENUM('active','disconnected','error') NOT NULL DEFAULT 'active',
+  `status_reason` VARCHAR(255) NULL,
   `subscribed_at` DATETIME NULL,
   `created_at` DATETIME NOT NULL,
   `updated_at` DATETIME NOT NULL,

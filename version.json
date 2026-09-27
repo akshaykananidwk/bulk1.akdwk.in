@@ -1,7 +1,7 @@
 {
-    "version": "1.0.2",
-    "build": 3,
-    "released": "2026-09-27",
+    "version": "1.0.3",
+    "build": 4,
+    "released": "2026-09-28",
     "min_php": "8.3.0",
     "required_ext": [
         "pdo_mysql",
@@ -15,6 +15,13 @@
     ],
     "breaking": false,
     "changelog": [
+        "Templates: sample values for every {{n}} are sent to Meta as 'example' (fixes REJECTED – INVALID_FORMAT), with clear errors for gaps or a variable at the start/end.",
+        "Forms keep their input after a validation error (old() read the data too early).",
+        "Toasts: max 3, hidden after 5s, duplicates merged, click to close, none while the tab is hidden.",
+        "Inbox: reaction, sticker, contacts, location, button/list replies, interactive, template, edit, delete and 'unsupported' messages are described; unknown types show 'Unsupported message type: <type>'. Old '[type]' rows are fixed automatically.",
+        "Inbox: message bubbles no longer have large empty space.",
+        "Typing indicator is shown only to other agents.",
+        "WhatsApp page: the reason for an account error (e.g. access token expired) plus a Reconnect button; Refresh clears the error once the token works; platform-owner note about Manual connect.",
         "Expired trial/subscription locks the tenant panel to the Billing page. Super admin and impersonation are never blocked, and webhooks, API and cron keep running.",
         "Inbox: old messages no longer pop up again on page load, no duplicate popups, and realtime stays on SSE after navigation.",
         "PHP 8.5 compatibility: Pdo\\Mysql::ATTR_INIT_COMMAND and no more curl_close(). Both were deprecated in 8.5 and broke cron and every Meta API call.",

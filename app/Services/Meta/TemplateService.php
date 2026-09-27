@@ -104,6 +104,54 @@ final class TemplateService
     /**
      * Submit a locally-drafted template to Meta for approval.
      */
+    /**
+     * Distinct {{n}} numbers used in a text, ascending.
+     * @return int[]
+     */
+    public static function variableNumbers(string $text): array
+    {
+        preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $text, $matches);
+        $numbers = array_values(array_unique(array_map('intval', $matches[1])));
+        sort($numbers);
+        return $numbers;
+    }
+
+    /**
+     * Validate a text component's variables against Meta's rules and return
+     * the sample values in order. Meta rejects a template with variables but
+     * no "example" (INVALID_FORMAT), so every variable needs a sample.
+     *
+     * @param array<int|string, mixed> $samples keyed by variable number
+     * @return string[] samples for {{1}}..{{n}}
+     * @throws \InvalidArgumentException with a user-facing message
+     */
+    public static function exampleValues(string $label, string $text, array $samples, int $maxVariables): array
+    {
+        $numbers = self::variableNumbers($text);
+        if ($numbers === []) {
+            return [];
+        }
+        if (count($numbers) > $maxVariables) {
+            throw new \InvalidArgumentException($label . ': ' . __('templates.too_many_vars', 'at most :n variable(s) allowed.', ['n' => (string) $maxVariables]));
+        }
+        if ($numbers !== range(1, count($numbers))) {
+            throw new \InvalidArgumentException($label . ': ' . __('templates.vars_sequence', 'variables must be numbered in order starting at {{1}} (no gaps).'));
+        }
+        $trimmed = trim($text);
+        if (preg_match('/^\{\{\s*\d+\s*\}\}/', $trimmed) || preg_match('/\{\{\s*\d+\s*\}\}[.!?]?$/', $trimmed)) {
+            throw new \InvalidArgumentException($label . ': ' . __('templates.vars_edges', 'Meta does not allow a variable at the very start or end of the text.'));
+        }
+        $values = [];
+        foreach ($numbers as $n) {
+            $value = trim((string) ($samples[$n] ?? $samples[(string) $n] ?? ''));
+            if ($value === '') {
+                throw new \InvalidArgumentException($label . ': ' . __('templates.sample_missing', 'enter a sample value for {{:n}}.', ['n' => (string) $n]));
+            }
+            $values[] = mb_substr($value, 0, 200);
+        }
+        return $values;
+    }
+
     public static function submit(array $waba, array $template): array
     {
         $client = new CloudApiClient($waba);

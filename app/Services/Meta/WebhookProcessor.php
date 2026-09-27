@@ -347,10 +347,14 @@ final class WebhookProcessor
     /**
      * @return array{0:string,1:string,2:?string,3:?string,4:array} [type, body, mediaId, mime, extra]
      */
-    private static function parseInbound(array $message): array
+    /**
+     * Turn a Meta message object into [type, body, media id, mime, extra].
+     * Public so the inbox can re-describe rows stored as "[type]" by older
+     * versions (the raw message is kept in messages.payload).
+     */
+    public static function parseInbound(array $message): array
     {
         $type = (string) ($message['type'] ?? 'unknown');
-        $extra = [];
 
         switch ($type) {
             case 'text':
@@ -358,53 +362,92 @@ final class WebhookProcessor
             case 'image':
             case 'video':
             case 'audio':
+            case 'voice':
             case 'document':
             case 'sticker':
                 $media = (array) ($message[$type] ?? []);
                 $caption = (string) ($media['caption'] ?? '');
+                $isVoice = $type === 'voice' || !empty($media['voice']);
                 $body = $caption !== '' ? $caption : match ($type) {
                     'image' => '📷 Photo',
                     'video' => '🎥 Video',
-                    'audio' => '🎤 Audio',
+                    'audio', 'voice' => $isVoice ? '🎤 Voice message' : '🎵 Audio',
                     'document' => '📄 ' . ($media['filename'] ?? 'Document'),
                     'sticker' => '💟 Sticker',
                 };
-                return [$type, $body, $media['id'] ?? null, $media['mime_type'] ?? null, ['filename' => $media['filename'] ?? null]];
+                return [$type === 'voice' ? 'audio' : $type, $body, $media['id'] ?? null, $media['mime_type'] ?? null, ['filename' => $media['filename'] ?? null]];
             case 'location':
                 $location = (array) ($message['location'] ?? []);
-                $body = '📍 ' . ($location['name'] ?? (($location['latitude'] ?? '') . ',' . ($location['longitude'] ?? '')));
+                $lat = $location['latitude'] ?? null;
+                $lng = $location['longitude'] ?? null;
+                $parts = array_filter([(string) ($location['name'] ?? ''), (string) ($location['address'] ?? '')], 'strlen');
+                $body = '📍 ' . ($parts !== [] ? implode(', ', $parts) : 'Location');
+                if ($lat !== null && $lng !== null) {
+                    $body .= "\nhttps://maps.google.com/?q=" . $lat . ',' . $lng;
+                }
                 return ['location', $body, null, null, $location];
             case 'contacts':
-                return ['contacts', '👤 Contact card', null, null, ['contacts' => $message['contacts'] ?? []]];
+                $lines = [];
+                foreach ((array) ($message['contacts'] ?? []) as $card) {
+                    $name = (string) ($card['name']['formatted_name'] ?? ($card['name']['first_name'] ?? ''));
+                    $phones = array_filter(array_map(fn ($p) => (string) ($p['phone'] ?? ($p['wa_id'] ?? '')), (array) ($card['phones'] ?? [])), 'strlen');
+                    $lines[] = trim(($name !== '' ? $name : 'Contact') . ($phones !== [] ? ' — ' . implode(', ', $phones) : ''));
+                }
+                return ['contacts', '👤 ' . ($lines !== [] ? implode("\n👤 ", $lines) : 'Contact card'), null, null, ['contacts' => $message['contacts'] ?? []]];
             case 'button':
                 $text = (string) ($message['button']['text'] ?? '');
-                return ['button_reply', $text, null, null, ['payload' => $message['button']['payload'] ?? null]];
+                return ['button_reply', '🔘 ' . $text, null, null, ['payload' => $message['button']['payload'] ?? null]];
             case 'interactive':
                 $interactive = (array) ($message['interactive'] ?? []);
                 $subtype = (string) ($interactive['type'] ?? '');
                 if ($subtype === 'button_reply') {
                     $reply = (array) ($interactive['button_reply'] ?? []);
-                    return ['button_reply', (string) ($reply['title'] ?? ''), null, null, ['id' => $reply['id'] ?? null]];
+                    return ['button_reply', '🔘 ' . (string) ($reply['title'] ?? ''), null, null, ['id' => $reply['id'] ?? null]];
                 }
                 if ($subtype === 'list_reply') {
                     $reply = (array) ($interactive['list_reply'] ?? []);
-                    return ['list_reply', (string) ($reply['title'] ?? ''), null, null, ['id' => $reply['id'] ?? null]];
+                    $body = '📋 ' . (string) ($reply['title'] ?? '') . (!empty($reply['description']) ? ' — ' . $reply['description'] : '');
+                    return ['list_reply', $body, null, null, ['id' => $reply['id'] ?? null]];
                 }
                 if ($subtype === 'nfm_reply') {
                     $reply = (array) ($interactive['nfm_reply'] ?? []);
-                    return ['flow_reply', (string) ($reply['body'] ?? 'Flow response'), null, null, ['response' => $reply['response_json'] ?? null]];
+                    return ['flow_reply', '📝 ' . (string) ($reply['body'] ?? 'Flow response'), null, null, ['response' => $reply['response_json'] ?? null]];
                 }
-                return ['interactive', json_encode($interactive, JSON_UNESCAPED_UNICODE) ?: '', null, null, []];
+                // Business-sent interactive (seen in coexistence echoes/history)
+                $text = (string) ($interactive['body']['text'] ?? '');
+                return ['interactive', $text !== '' ? $text : '🔘 Interactive message' . ($subtype !== '' ? ' (' . $subtype . ')' : ''), null, null, ['subtype' => $subtype]];
+            case 'template':
+                // Business-sent template (coexistence echoes/history)
+                $name = (string) ($message['template']['name'] ?? '');
+                return ['template', '📨 Template' . ($name !== '' ? ': ' . $name : ''), null, null, []];
             case 'order':
                 $order = (array) ($message['order'] ?? []);
                 return ['order', '🛒 Order (' . count((array) ($order['product_items'] ?? [])) . ' items)', null, null, $order];
             case 'reaction':
                 $reaction = (array) ($message['reaction'] ?? []);
-                return ['reaction', (string) ($reaction['emoji'] ?? ''), null, null, ['message_id' => $reaction['message_id'] ?? null]];
+                $emoji = (string) ($reaction['emoji'] ?? '');
+                return ['reaction', $emoji !== '' ? 'Reacted ' . $emoji : 'Removed a reaction', null, null, ['message_id' => $reaction['message_id'] ?? null]];
             case 'system':
-                return ['system', (string) ($message['system']['body'] ?? 'System update'), null, null, []];
+                return ['system', 'ℹ️ ' . (string) ($message['system']['body'] ?? 'System update'), null, null, []];
+            case 'request_welcome':
+                return ['system', '👋 Opened the chat', null, null, []];
+            case 'edit':
+                $edited = (array) ($message['edit']['message'] ?? ($message['edit'] ?? []));
+                $text = (string) ($edited['text']['body'] ?? ($edited['body'] ?? ''));
+                return ['edit', '✏️ Edited: ' . ($text !== '' ? $text : 'message edited'), null, null, []];
+            case 'revoke':
+                return ['revoke', '🚫 Message deleted', null, null, []];
+            case 'unsupported':
+                // Polls, view-once, events etc. Meta says what it was in
+                // unsupported.type or in the error details.
+                $what = (string) ($message['unsupported']['type'] ?? '');
+                if ($what === '') {
+                    $error = (array) (($message['errors'] ?? [])[0] ?? []);
+                    $what = (string) ($error['error_data']['details'] ?? ($error['title'] ?? ($error['message'] ?? '')));
+                }
+                return ['unsupported', 'Unsupported message type' . ($what !== '' ? ': ' . $what : ''), null, null, []];
             default:
-                return [$type, '[' . $type . ']', null, null, []];
+                return [$type, 'Unsupported message type: ' . $type, null, null, []];
         }
     }
 
@@ -596,7 +639,11 @@ final class WebhookProcessor
         }
         $event = (string) ($value['event'] ?? $field);
         if (in_array($event, ['DISABLED_UPDATE', 'ACCOUNT_DELETED', 'ACCOUNT_RESTRICTION'], true)) {
-            DB::table('waba_accounts')->where('id', $waba['id'])->update(['status' => 'error', 'updated_at' => now()]);
+            DB::table('waba_accounts')->where('id', $waba['id'])->update([
+                'status' => 'error',
+                'status_reason' => mb_substr(__('whatsapp.reason_meta', 'Meta reported: ') . $event . (!empty($value['ban_info']['waba_ban_state']) ? ' — ' . $value['ban_info']['waba_ban_state'] : ''), 0, 255),
+                'updated_at' => now(),
+            ]);
         }
         self::notifyTenant((int) $waba['tenant_id'], 'account.update',
             __('whatsapp.account_update', 'WhatsApp account update'), $event, '/tenant/whatsapp');

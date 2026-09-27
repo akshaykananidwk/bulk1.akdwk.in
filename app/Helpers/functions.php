@@ -169,6 +169,9 @@ if (!function_exists('old')) {
      */
     function old(string $key, mixed $default = ''): mixed
     {
+        // Page content renders before the alerts partial, so make sure this
+        // request's flash data has been moved into _flash_read first.
+        flash('old');
         return $_SESSION['_flash_read']['old'][$key] ?? $default;
     }
 }

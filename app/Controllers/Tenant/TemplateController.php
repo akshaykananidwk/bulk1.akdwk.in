@@ -57,12 +57,28 @@ final class TemplateController extends Controller
             Redirect::back('/tenant/templates/create')->with('error', __('whatsapp.no_number', 'No active WhatsApp number connected.'))->withInput()->send();
         }
 
-        // Build Meta components
+        // Build Meta components. Every {{n}} needs a sample value in "example",
+        // otherwise Meta rejects the template as INVALID_FORMAT.
+        try {
+            $headerExamples = TemplateService::exampleValues(__('templates.header', 'Header'), (string) ($data['header'] ?? ''), ['1' => $request->str('header_example')], 1);
+            $bodyExamples = TemplateService::exampleValues(__('templates.body', 'Body'), (string) $data['body'], $request->arr('body_examples'), 20);
+        } catch (\InvalidArgumentException $e) {
+            Redirect::back('/tenant/templates/create')->with('error', $e->getMessage())->withInput()->send();
+        }
+
         $components = [];
         if (!empty($data['header'])) {
-            $components[] = ['type' => 'HEADER', 'format' => 'TEXT', 'text' => (string) $data['header']];
+            $header = ['type' => 'HEADER', 'format' => 'TEXT', 'text' => (string) $data['header']];
+            if ($headerExamples !== []) {
+                $header['example'] = ['header_text' => $headerExamples];
+            }
+            $components[] = $header;
         }
-        $components[] = ['type' => 'BODY', 'text' => (string) $data['body']];
+        $body = ['type' => 'BODY', 'text' => (string) $data['body']];
+        if ($bodyExamples !== []) {
+            $body['example'] = ['body_text' => [$bodyExamples]];
+        }
+        $components[] = $body;
         if (!empty($data['footer'])) {
             $components[] = ['type' => 'FOOTER', 'text' => (string) $data['footer']];
         }

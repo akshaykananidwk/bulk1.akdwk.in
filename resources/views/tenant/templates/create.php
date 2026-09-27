@@ -2,8 +2,18 @@
 <?php View::start('content'); ?>
 <div class="page-header"><h1><?= e(__('templates.new', 'New template')) ?></h1></div>
 
+<?php
+// Form state as JSON (safe for any quotes/newlines in re-filled input)
+$formState = [
+    'header' => (string) old('header'),
+    'body' => (string) old('body'),
+    'footer' => (string) old('footer'),
+    'headerSample' => (string) old('header_example'),
+    'samples' => (object) array_map('strval', (array) old('body_examples', [])),
+];
+?>
 <form method="post" action="<?= e(url('/tenant/templates')) ?>"
-      x-data="{ header: '<?= e(old('header')) ?>', body: '<?= e(old('body')) ?>', footer: '<?= e(old('footer')) ?>' }">
+      x-data="templateForm(<?= e(json_encode($formState, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP)) ?>)">
     <?= csrf_field() ?>
     <div class="grid-2">
         <div class="card">
@@ -41,13 +51,29 @@
             </div>
             <div class="form-group">
                 <label class="form-label"><?= e(__('templates.header', 'Header')) ?> <span class="text-muted">(<?= e(__('common.optional', 'optional')) ?>)</span></label>
-                <input class="input" name="header" x-model="header" maxlength="60">
+                <input class="input" name="header" x-model="header" maxlength="60" placeholder="Order {{1}} update">
+                <div class="form-hint"><?= e(__('templates.header_hint', 'Max one variable: {{1}}.')) ?></div>
+            </div>
+            <div class="form-group" x-show="headerHasVar" x-cloak>
+                <label class="form-label"><?= e(__('templates.header_sample', 'Header sample value for')) ?> <code>{{1}}</code></label>
+                <input class="input" name="header_example" x-model="headerSample" maxlength="200" placeholder="ORD-1234" :required="headerHasVar">
             </div>
             <div class="form-group">
                 <label class="form-label"><?= e(__('templates.body', 'Body')) ?></label>
                 <textarea class="input" name="body" x-model="body" required rows="5" maxlength="1024"
                           placeholder="Hello {{1}}, your order {{2}} has been shipped! 🚚"></textarea>
                 <div class="form-hint"><?= e(__('templates.body_hint', 'Use {{1}}, {{2}}… for variables. Emojis allowed.')) ?></div>
+            </div>
+            <div class="form-group" x-show="bodyVars.length" x-cloak>
+                <label class="form-label"><?= e(__('templates.samples', 'Sample values (required by Meta for review)')) ?></label>
+                <template x-for="n in bodyVars" :key="n">
+                    <div class="input-group mb-2">
+                        <span class="btn btn-outline" style="pointer-events:none;min-width:4rem" x-text="'{{' + n + '}}'"></span>
+                        <input class="input" :name="'body_examples[' + n + ']'" x-model="samples[n]" maxlength="200" required
+                               :placeholder="n == 1 ? 'Rahul' : (n == 2 ? 'ORD-1234' : '<?= e(__('templates.sample_ph', 'Sample value')) ?>')">
+                    </div>
+                </template>
+                <div class="form-hint"><?= e(__('templates.samples_hint', 'Realistic examples help approval. They are only shown to Meta reviewers, never to customers.')) ?></div>
             </div>
             <div class="form-group">
                 <label class="form-label"><?= e(__('templates.footer', 'Footer')) ?> <span class="text-muted">(<?= e(__('common.optional', 'optional')) ?>)</span></label>
@@ -68,8 +94,8 @@
             <div class="card" style="background:var(--wa-chat-bg)">
                 <h3 class="card-title"><?= e(__('templates.live_preview', 'Live preview')) ?></h3>
                 <div class="bubble bubble-in" style="max-width:100%">
-                    <strong x-show="header" x-text="header" style="display:block"></strong>
-                    <span x-text="body || '<?= e(__('templates.preview_placeholder', 'Your message will appear here…')) ?>'" style="white-space:pre-wrap"></span>
+                    <strong x-show="header" x-text="fill(header, {1: headerSample})" style="display:block"></strong>
+                    <span x-text="fill(body, samples) || '<?= e(__('templates.preview_placeholder', 'Your message will appear here…')) ?>'" style="white-space:pre-wrap"></span>
                     <div class="text-xs text-muted" x-show="footer" x-text="footer" style="margin-top:.3rem"></div>
                     <div class="meta"><span><?= e(date('h:i A')) ?></span></div>
                 </div>
@@ -81,4 +107,29 @@
         </div>
     </div>
 </form>
+<script>
+function templateForm(state) {
+    var varRe = /\{\{\s*(\d+)\s*\}\}/g;
+    return {
+        header: state.header, body: state.body, footer: state.footer,
+        headerSample: state.headerSample, samples: state.samples || {},
+        get bodyVars() {
+            var seen = {}, out = [], m;
+            varRe.lastIndex = 0;
+            while ((m = varRe.exec(this.body || '')) !== null) {
+                var n = parseInt(m[1], 10);
+                if (!seen[n]) { seen[n] = true; out.push(n); }
+            }
+            return out.sort(function (a, b) { return a - b; });
+        },
+        get headerHasVar() { return /\{\{\s*\d+\s*\}\}/.test(this.header || ''); },
+        fill: function (text, values) {
+            return (text || '').replace(varRe, function (all, n) {
+                var v = values && values[n];
+                return v ? v : all;
+            });
+        }
+    };
+}
+</script>
 <?php View::end(); ?>

@@ -133,7 +133,7 @@ final class InboxController extends Controller
         $query = DB::table('messages')
             ->where('conversation_id', $conversation['id'])
             ->select('id', 'wamid', 'direction', 'type', 'body', 'media_path', 'media_mime',
-                'status', 'error_code', 'error_title', 'context_wamid', 'is_private_note', 'user_id', 'created_at');
+                'status', 'error_code', 'error_title', 'context_wamid', 'is_private_note', 'user_id', 'created_at', 'payload');
         if ($beforeId > 0) {
             $query->where('id', '<', $beforeId);
         }
@@ -141,6 +141,18 @@ final class InboxController extends Controller
         $rows = array_reverse($rows);
 
         foreach ($rows as &$row) {
+            // Older versions stored unknown types as "[type]" — describe them
+            // properly from the saved raw message and fix the row once.
+            if (preg_match('/^\[[a-z_]+\]$/', (string) $row['body']) && !empty($row['payload'])) {
+                $raw = json_decode((string) $row['payload'], true);
+                if (is_array($raw) && isset($raw['type'])) {
+                    [$type, $body] = \App\Services\Meta\WebhookProcessor::parseInbound($raw);
+                    DB::table('messages')->where('id', $row['id'])->update(['type' => $type, 'body' => $body]);
+                    $row['type'] = $type;
+                    $row['body'] = $body;
+                }
+            }
+            unset($row['payload']);
             $row['media_url'] = $row['media_path'] ? url('/media/' . $row['media_path']) : null;
             $row['time_label'] = \App\Core\DateHelper::display((string) $row['created_at'], 'h:i A');
             $row['day'] = date('Y-m-d', strtotime((string) $row['created_at']));

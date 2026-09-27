@@ -147,6 +147,13 @@ final class WhatsAppController extends Controller
                 ]);
             }
             \App\Core\Queue::push(\App\Jobs\SyncTemplatesJob::class, ['waba_account_id' => $wabaId], 'default', 5, 0, (int) Tenant::id());
+
+            // The token works again → clear a token/connection error (a Meta
+            // account restriction stays until Meta sends a new account_update)
+            $reason = (string) ($waba['status_reason'] ?? '');
+            if ($waba['status'] === 'error' && !preg_match('/DISABLED_UPDATE|ACCOUNT_DELETED|ACCOUNT_RESTRICTION/', $reason)) {
+                DB::table('waba_accounts')->where('id', $wabaId)->update(['status' => 'active', 'status_reason' => null, 'updated_at' => now()]);
+            }
         } catch (\Throwable $e) {
             Redirect::back('/tenant/whatsapp')->with('error', $e->getMessage())->send();
         }

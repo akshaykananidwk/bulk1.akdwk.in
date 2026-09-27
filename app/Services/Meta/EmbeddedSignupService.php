@@ -82,6 +82,7 @@ final class EmbeddedSignupService
             'token_expires_at' => $tokenExpiresAt,
             'token_expiry_warned_at' => null,
             'status' => 'active',
+            'status_reason' => null,
             'updated_at' => now(),
         ];
         if ($existing !== null) {
@@ -116,7 +117,10 @@ final class EmbeddedSignupService
             DB::table('waba_accounts')->where('id', $wabaRowId)->update(['subscribed_at' => now()]);
         } catch (MetaApiException $e) {
             Logger::channel('meta')->error('subscribed_apps failed', ['error' => $e->getMessage()]);
-            DB::table('waba_accounts')->where('id', $wabaRowId)->update(['status' => 'error']);
+            DB::table('waba_accounts')->where('id', $wabaRowId)->update([
+                'status' => 'error',
+                'status_reason' => mb_substr(__('whatsapp.reason_subscribe', 'Webhook subscription failed: ') . $e->getMessage(), 0, 255),
+            ]);
             throw new \RuntimeException(__('whatsapp.subscribe_failed', 'Connected to Meta, but webhook subscription failed: ') . $e->getMessage());
         }
 

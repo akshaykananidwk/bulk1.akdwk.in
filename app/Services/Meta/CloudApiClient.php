@@ -238,7 +238,10 @@ final class CloudApiClient
 
             // Token expiry → flag account for reconnection
             if ($code === 190) {
-                DB::table('waba_accounts')->where('id', $this->waba['id'])->update(['status' => 'error']);
+                DB::table('waba_accounts')->where('id', $this->waba['id'])->update([
+                    'status' => 'error',
+                    'status_reason' => mb_substr(__('whatsapp.reason_token', 'Access token expired or was revoked') . ' (' . $message . ')', 0, 255),
+                ]);
             }
 
             throw new MetaApiException($message, $code, $subcode);

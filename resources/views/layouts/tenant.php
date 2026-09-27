@@ -60,7 +60,7 @@ $isDark = !empty($currentUser['dark_mode']);
         if (window.kwcRealtime) {
             kwcRealtime.connect(['inbox', 'notifications']);
             kwcRealtime.on('notification', function (payload) {
-                if (payload && payload.title && window.kwc) { kwc.toast(payload.title, 'info'); }
+                if (payload && payload.title && window.kwc) { kwc.liveToast(payload.title, 'info'); }
             });
         }
     });
