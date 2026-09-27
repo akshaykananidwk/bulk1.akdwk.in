@@ -49,6 +49,7 @@ final class HealthController extends Controller
                 'opcache' => function_exists('opcache_get_status') && (bool) @opcache_get_status(false),
             ],
             'extensions' => $extensionStatus,
+            'webCronUrl' => \App\Controllers\Webhook\WebCronController::url(),
             'appVersion' => app_version(),
             'installedVersion' => (string) setting('installed_version', ''),
         ], 'layouts/admin');

@@ -1,11 +1,25 @@
 {
     "version": "1.0.2",
-    "build": 2,
-    "released": "2026-07-28",
+    "build": 3,
+    "released": "2026-09-27",
     "min_php": "8.3.0",
-    "required_ext": ["pdo_mysql", "curl", "mbstring", "openssl", "zip", "gd", "fileinfo", "json"],
+    "required_ext": [
+        "pdo_mysql",
+        "curl",
+        "mbstring",
+        "openssl",
+        "zip",
+        "gd",
+        "fileinfo",
+        "json"
+    ],
     "breaking": false,
     "changelog": [
-        "Initial release: core framework, multi-tenant SaaS layer, Meta WhatsApp Cloud API module, team inbox, installer, GitHub auto-updater."
+        "WhatsApp Business app coexistence (QR) onboarding + Embedded Signup fixes (race, popup blocking, CANCEL/ERROR events).",
+        "Coexistence webhooks: smb_message_echoes, history, smb_app_state_sync; history/echo media is downloaded when under 14 days old.",
+        "Web Cron URL (/cron/run/<key>) for servers without a system cron; Meta webhooks are also processed right after the 200 reply.",
+        "Trial-expired / subscription-expired status on the admin tenant list, the tenant dashboard and the billing page.",
+        "Manual connect: optional two-step PIN; generated PINs are shown to the tenant; temporary tokens are detected and expiry warnings are scheduled.",
+        "Coexistence badge + limitations notice; /admin/system-health redirects to /admin/health."
     ]
 }

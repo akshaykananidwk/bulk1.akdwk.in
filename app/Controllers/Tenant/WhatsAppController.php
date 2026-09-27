@@ -56,7 +56,7 @@ final class WhatsAppController extends Controller
         }
 
         try {
-            $waba = EmbeddedSignupService::complete(
+            $result = EmbeddedSignupService::complete(
                 (int) Tenant::id(),
                 (string) $data['code'],
                 (string) $data['waba_id'],
@@ -68,6 +68,11 @@ final class WhatsAppController extends Controller
         }
 
         Tenant::recordUsage('waba_numbers');
+        $waba = $result['waba'];
+        if ($result['generated_pin'] !== null) {
+            // Shown on the reloaded WhatsApp page (the JS reloads after success)
+            $_SESSION['_flash']['warning'] = self::pinNotice((string) $result['generated_pin']);
+        }
         $this->ok(['waba' => ['id' => $waba['id'], 'waba_id' => $waba['waba_id']]], __('whatsapp.connected', 'WhatsApp connected successfully!'));
     }
 
@@ -77,7 +82,12 @@ final class WhatsAppController extends Controller
             'waba_id' => 'required|string|max:64',
             'phone_number_id' => 'required|string|max:64',
             'access_token' => 'required|string|min:20',
+            'pin' => 'nullable|string|max:6',
         ]);
+        $pin = trim((string) ($data['pin'] ?? ''));
+        if ($pin !== '' && !preg_match('/^\d{6}$/', $pin)) {
+            Redirect::back('/tenant/whatsapp')->with('error', __('whatsapp.pin_invalid', 'The two-step verification PIN must be exactly 6 digits.'))->send();
+        }
 
         [$allowed] = Tenant::withinLimit('waba_numbers');
         if (!$allowed) {
@@ -85,18 +95,29 @@ final class WhatsAppController extends Controller
         }
 
         try {
-            EmbeddedSignupService::connectManual(
+            $result = EmbeddedSignupService::connectManual(
                 (int) Tenant::id(),
                 (string) $data['waba_id'],
                 (string) $data['phone_number_id'],
-                (string) $data['access_token']
+                (string) $data['access_token'],
+                $pin !== '' ? $pin : null
             );
         } catch (\Throwable $e) {
             Redirect::back('/tenant/whatsapp')->with('error', $e->getMessage())->send();
         }
 
         Tenant::recordUsage('waba_numbers');
-        Redirect::to('/tenant/whatsapp')->with('success', __('whatsapp.connected', 'WhatsApp connected successfully!'))->send();
+        $redirect = Redirect::to('/tenant/whatsapp')->with('success', __('whatsapp.connected', 'WhatsApp connected successfully!'));
+        if ($result['generated_pin'] !== null) {
+            $redirect->with('warning', self::pinNotice((string) $result['generated_pin']));
+        }
+        $redirect->send();
+    }
+
+    private static function pinNotice(string $pin): string
+    {
+        return __('whatsapp.pin_generated', 'Your number was registered with a new two-step verification PIN: ') . $pin
+            . __('whatsapp.pin_generated_2', ' — save it now; Meta asks for it if you ever re-register this number.');
     }
 
     /** Re-sync numbers + templates from Meta. */

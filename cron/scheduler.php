@@ -101,6 +101,11 @@ $scheduler->task('backups.daily', 'daily_at:03:30', function () {
     }
 });
 
+$scheduler->task('tokens.expiry_warn', 'hourly', function () {
+    // Temporary manual tokens get token_expires_at from debug_token on connect
+    \App\Services\Meta\EmbeddedSignupService::warnExpiringTokens();
+});
+
 $scheduler->task('session_windows.expire', 'every_5_minutes', function () {
     // Notify UI about conversations whose 24h window just closed
     DB::table('conversations')

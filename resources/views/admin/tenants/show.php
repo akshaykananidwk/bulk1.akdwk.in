@@ -6,6 +6,7 @@
         <h1><?= e($workspace['name']) ?>
             <?php $badge = match ($workspace['status']) { 'active' => 'success', 'suspended' => 'danger', 'pending' => 'warning', default => 'muted' }; ?>
             <span class="badge badge-<?= e($badge) ?>"><?= e($workspace['status']) ?></span>
+            <?php View::partial('partials/billing-state-badge', ['tenant' => $workspace]); ?>
         </h1>
         <p class="text-sm text-muted" style="margin:0">
             <?= e($workspace['email']) ?>

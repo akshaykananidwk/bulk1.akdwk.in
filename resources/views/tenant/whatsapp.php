@@ -23,13 +23,20 @@
                 ⚙️ <?= e(__('whatsapp.connect_manual', 'Manual connect')) ?>
             </button>
         </div>
+        <?php if ($metaApp !== null && !empty($metaApp['config_id'])): ?>
+            <div style="display:flex;justify-content:center;text-align:left"><?php View::partial('partials/coexistence-notice', ['compact' => true]); ?></div>
+        <?php endif; ?>
     </div>
 <?php else: ?>
     <?php foreach ($wabas as $waba): ?>
         <div class="card mb-4">
             <div class="card-header">
                 <div>
-                    <h2 class="card-title"><?= e($waba['name'] ?: ('WABA ' . $waba['waba_id'])) ?></h2>
+                    <h2 class="card-title"><?= e($waba['name'] ?: ('WABA ' . $waba['waba_id'])) ?>
+                        <?php if ($waba['token_mode'] === 'coexistence'): ?>
+                            <span class="badge badge-info" title="<?= e(__('whatsapp.coex_badge_hint', 'This number is used in the WhatsApp Business app and the Cloud API at the same time')) ?>">📲 <?= e(__('whatsapp.coex_badge', 'Coexistence')) ?></span>
+                        <?php endif; ?>
+                    </h2>
                     <span class="text-xs text-muted">ID: <?= e($waba['waba_id']) ?> · <?= e(__('whatsapp.mode', 'Mode')) ?>: <?= e($waba['token_mode']) ?></span>
                 </div>
                 <div class="flex gap-2 items-center">
@@ -42,6 +49,9 @@
                     </form>
                 </div>
             </div>
+            <?php if ($waba['token_mode'] === 'coexistence'): ?>
+                <?php View::partial('partials/coexistence-notice'); ?>
+            <?php endif; ?>
             <div class="table-wrap" style="border:none">
                 <table class="table">
                     <thead><tr>
@@ -77,6 +87,9 @@
         <?php endif; ?>
         <button class="btn btn-outline" x-data x-on:click="document.getElementById('manual-modal').classList.remove('hidden')">⚙️ <?= e(__('whatsapp.connect_manual', 'Manual connect')) ?></button>
     </div>
+    <?php if ($metaApp !== null && !empty($metaApp['config_id'])): ?>
+        <div class="mb-4" style="margin-top:-.75rem"><?php View::partial('partials/coexistence-notice', ['compact' => true]); ?></div>
+    <?php endif; ?>
 <?php endif; ?>
 
 <div class="card">
@@ -110,6 +123,11 @@
                     <label class="form-label"><?= e(__('whatsapp.permanent_token', 'Permanent access token')) ?></label>
                     <textarea class="input" name="access_token" required rows="3" placeholder="EAAG..."></textarea>
                     <div class="form-hint"><?= e(__('whatsapp.token_hint', 'System-user token with whatsapp_business_messaging + whatsapp_business_management permissions. Stored encrypted.')) ?></div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label"><?= e(__('whatsapp.pin_label', 'Two-step verification PIN (optional)')) ?></label>
+                    <input class="input" name="pin" inputmode="numeric" pattern="\d{6}" maxlength="6" autocomplete="off" placeholder="123456">
+                    <div class="form-hint"><?= e(__('whatsapp.pin_hint', 'If the number already has a 6-digit PIN, enter it. Leave blank and we will set a new PIN and show it to you once.')) ?></div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -220,8 +238,8 @@
 
     var sdkReady = false, pending = null;
     function withSdk(cb) {
-        if (sdkReady) { cb(); return; }
-        pending = cb;
+        if (sdkReady) { if (cb) { cb(); } return; }
+        if (cb) { pending = cb; }
         if (document.getElementById('facebook-jssdk')) { return; }
         window.fbAsyncInit = function () {
             FB.init({ appId: APP_ID, autoLogAppEvents: true, xfbml: false, version: API_VERSION });
@@ -233,7 +251,13 @@
         script.src = 'https://connect.facebook.net/en_US/sdk.js';
         script.async = true; script.defer = true; script.crossOrigin = 'anonymous';
         script.onerror = function () {
-            kwc.toast('Facebook SDK could not load — disable ad-blocker and retry.', 'danger');
+            // Remove the failed tag so the next click retries the download;
+            // only complain when the user actually clicked (not on preload).
+            script.remove();
+            if (pending) {
+                pending = null;
+                kwc.toast('<?= e(__('whatsapp.sdk_failed', 'Facebook SDK could not load — disable ad-blocker and retry.')) ?>', 'danger');
+            }
             setBusy(false);
         };
         document.head.appendChild(script);
@@ -241,7 +265,7 @@
 
     // Pre-load the SDK so the click opens the Meta popup directly
     // (a popup opened after an async load is often blocked by the browser).
-    withSdk(function () {});
+    withSdk(null);
 
     buttons.forEach(function (btn) {
         btn.addEventListener('click', function () {

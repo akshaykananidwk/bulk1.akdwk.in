@@ -178,7 +178,7 @@ final class WebhookProcessor
             $status = $direction === 'in' ? 'delivered' : 'sent';
         }
 
-        DB::table('messages')->insert([
+        $messageId = DB::table('messages')->insert([
             'tenant_id' => $tenantId,
             'conversation_id' => $conversationId,
             'contact_id' => (int) $contact['id'],
@@ -195,6 +195,15 @@ final class WebhookProcessor
             'updated_at' => now(),
         ]);
 
+        // Meta keeps media downloadable for a limited time, so only fetch recent files
+        if ($mediaMetaId !== null && strtotime($timestamp) >= time() - 14 * 86400) {
+            \App\Core\Queue::push(\App\Jobs\DownloadMediaJob::class, [
+                'message_id' => $messageId,
+                'media_meta_id' => $mediaMetaId,
+                'phone_number_row_id' => (int) $phone['id'],
+            ], 'media', 7, 0, $tenantId);
+        }
+
         // Keep the conversation preview current (only if this message is newer)
         $prefix = DB::prefix();
         DB::query(
@@ -204,6 +213,11 @@ final class WebhookProcessor
         );
 
         if ($live) {
+            // The business replied from the phone app, so the chat has been read there
+            DB::table('conversations')->where('id', $conversationId)->update([
+                'unread_count' => 0,
+                'last_outbound_at' => $timestamp,
+            ]);
             Event::publish('inbox', 'message.new', [
                 'conversation_id' => $conversationId,
                 'direction' => $direction,

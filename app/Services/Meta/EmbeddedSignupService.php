@@ -51,22 +51,36 @@ final class EmbeddedSignupService
     }
 
     /**
-     * Manual connection: user pastes WABA ID + Phone Number ID + permanent token.
+     * Manual connection: user pastes WABA ID + Phone Number ID + token, and
+     * optionally the number's existing 6-digit two-step verification PIN.
      */
-    public static function connectManual(int $tenantId, string $wabaId, string $phoneNumberId, string $token): array
+    public static function connectManual(int $tenantId, string $wabaId, string $phoneNumberId, string $token, ?string $pin = null): array
     {
         $app = self::defaultApp();
-        return self::connect($tenantId, $wabaId, $phoneNumberId, $token, 'permanent_system_user', $app !== null ? (int) $app['id'] : null);
+        return self::connect($tenantId, $wabaId, $phoneNumberId, $token, 'permanent_system_user', $app !== null ? (int) $app['id'] : null, $pin);
     }
 
-    private static function connect(int $tenantId, string $wabaId, string $phoneNumberId, string $token, string $mode, ?int $metaAppId): array
+    /**
+     * Returns ['waba' => row, 'generated_pin' => ?string]. generated_pin is set
+     * when we registered the number with a PIN we made up, so the tenant can be
+     * told their new two-step verification PIN.
+     */
+    private static function connect(int $tenantId, string $wabaId, string $phoneNumberId, string $token, string $mode, ?int $metaAppId, ?string $userPin = null): array
     {
+        // A pasted token that expires is a temporary (user) token, not a system-user one
+        $tokenExpiresAt = self::tokenExpiresAt($token);
+        if ($mode === 'permanent_system_user' && $tokenExpiresAt !== null) {
+            $mode = 'temporary_manual';
+        }
+
         // Upsert the WABA account
         $existing = DB::table('waba_accounts')->where('tenant_id', $tenantId)->where('waba_id', $wabaId)->first();
         $row = [
             'meta_app_id' => $metaAppId,
             'token_mode' => $mode,
             'access_token_encrypted' => Crypt::encrypt($token),
+            'token_expires_at' => $tokenExpiresAt,
+            'token_expiry_warned_at' => null,
             'status' => 'active',
             'updated_at' => now(),
         ];
@@ -124,15 +138,21 @@ final class EmbeddedSignupService
 
         // 5. Register the phone for Cloud API — NOT for coexistence numbers,
         //    which Meta has already registered (registering would fail/disturb them).
+        //    Registering sets the number's two-step verification PIN, so use the
+        //    tenant's own PIN when given; otherwise generate one and tell them.
         $pin = null;
+        $generatedPin = null;
         $registered = $mode === 'coexistence';
         if ($mode !== 'coexistence') {
-            $pin = (string) random_int(100000, 999999);
+            $candidate = $userPin !== null && $userPin !== '' ? $userPin : (string) random_int(100000, 999999);
             try {
-                $client->registerPhone($phoneNumberId, $pin);
+                $client->registerPhone($phoneNumberId, $candidate);
                 $registered = true;
+                $pin = $candidate;
+                $generatedPin = $candidate === $userPin ? null : $candidate;
             } catch (MetaApiException $e) {
-                // "already registered" is fine; anything else is logged for support
+                // "already registered" / PIN mismatch: the number keeps its existing
+                // PIN, so we must not store ours. Logged for support.
                 Logger::channel('meta')->warning('Phone register response', ['error' => $e->getMessage()]);
             }
         }
@@ -194,7 +214,35 @@ final class EmbeddedSignupService
 
         audit_log('whatsapp.connected', 'waba_account', $wabaRowId, ['waba_id' => $wabaId, 'mode' => $mode]);
 
-        return DB::table('waba_accounts')->where('id', $wabaRowId)->first() ?? [];
+        return [
+            'waba' => DB::table('waba_accounts')->where('id', $wabaRowId)->first() ?? [],
+            'generated_pin' => $generatedPin,
+        ];
+    }
+
+    /**
+     * Expiry of an access token via Graph debug_token (needs the platform Meta
+     * App). Returns null for never-expiring tokens (system-user / business
+     * integration tokens) or when it cannot be determined.
+     */
+    public static function tokenExpiresAt(string $token): ?string
+    {
+        $app = self::defaultApp();
+        $secret = $app !== null ? Crypt::decrypt((string) $app['app_secret_encrypted']) : null;
+        if ($app === null || $secret === null || $secret === '') {
+            return null;
+        }
+        try {
+            $response = Http::make()->timeout(15)->logTo('meta')->get(
+                (string) config('meta.graph_url', 'https://graph.facebook.com') . '/' . ((string) ($app['api_version'] ?: 'v24.0')) . '/debug_token',
+                ['input_token' => $token, 'access_token' => $app['app_id'] . '|' . $secret]
+            );
+            $expiresAt = (int) ($response->json()['data']['expires_at'] ?? 0);
+        } catch (\Throwable $e) {
+            Logger::channel('meta')->warning('debug_token failed', ['error' => $e->getMessage()]);
+            return null;
+        }
+        return $expiresAt > 0 ? date('Y-m-d H:i:s', $expiresAt) : null;
     }
 
     public static function defaultApp(): ?array

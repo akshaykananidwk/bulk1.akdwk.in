@@ -31,18 +31,15 @@ final class SubscriptionMiddleware
             }
         }
 
-        $trialEndsAt = $tenant['trial_ends_at'] ?? null;
-        $subscriptionEndsAt = $tenant['subscription_ends_at'] ?? null;
-        $now = date('Y-m-d H:i:s');
-
-        $active = ($subscriptionEndsAt !== null && $subscriptionEndsAt > $now)
-            || ($trialEndsAt !== null && $trialEndsAt > $now);
-
-        if (!$active) {
+        $state = \App\Models\Tenant::billingState($tenant);
+        if ($state === 'trial_expired' || $state === 'expired') {
+            $message = $state === 'trial_expired'
+                ? __('billing.trial_expired', 'Your free trial has ended. Choose a plan to continue.')
+                : __('billing.expired', 'Your subscription has expired. Please renew to continue.');
             if ($request->wantsJson()) {
-                Response::json(['success' => false, 'message' => __('billing.expired', 'Your subscription has expired. Please renew to continue.')], 402);
+                Response::json(['success' => false, 'message' => $message], 402);
             }
-            Redirect::to('/tenant/billing')->with('warning', __('billing.expired', 'Your subscription has expired. Please renew to continue.'))->send();
+            Redirect::to('/tenant/billing')->with('warning', $message)->send();
         }
 
         $next();

@@ -71,6 +71,25 @@ final class Tenant extends Model
         });
     }
 
+    /**
+     * Billing state shown to admins and tenants, and enforced by
+     * SubscriptionMiddleware: 'subscribed', 'trial', 'trial_expired' or 'expired'.
+     * (tenants.status stays 'active' — it is the account state, not billing.)
+     */
+    public static function billingState(array $tenant): string
+    {
+        $now = date('Y-m-d H:i:s');
+        $subscriptionEndsAt = $tenant['subscription_ends_at'] ?? null;
+        $trialEndsAt = $tenant['trial_ends_at'] ?? null;
+        if (!empty($subscriptionEndsAt) && $subscriptionEndsAt > $now) {
+            return 'subscribed';
+        }
+        if (!empty($trialEndsAt) && $trialEndsAt > $now) {
+            return 'trial';
+        }
+        return empty($subscriptionEndsAt) ? 'trial_expired' : 'expired';
+    }
+
     public static function uniqueSlug(string $name): string
     {
         $base = Str::slug($name) ?: 'workspace';

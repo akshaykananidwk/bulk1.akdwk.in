@@ -54,6 +54,8 @@ Router::group(['prefix' => '/admin', 'middleware' => ['auth', 'admin', 'csrf'], 
 
     // System health
     Router::get('/health', [\App\Controllers\Admin\HealthController::class, 'index'])->name('health');
+    // Old/alternate URL — keep links consistent
+    Router::get('/system-health', fn () => \App\Core\Redirect::to('/admin/health')->send());
 
     // Backups
     Router::get('/backups', [\App\Controllers\Admin\BackupController::class, 'index'])->name('backups');

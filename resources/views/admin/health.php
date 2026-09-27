@@ -44,6 +44,11 @@
                 <tr>
                     <td><?= e(__('admin.check_cron', 'Cron running')) ?>
                         <div class="text-xs text-muted"><?= $checks['cron_last_run'] !== null ? e(__('admin.last_run', 'Last run')) . ' ' . e(time_ago(date('Y-m-d H:i:s', (int) $checks['cron_last_run']))) : e(__('admin.never_ran', 'never ran')) ?></div>
+                        <div class="text-xs text-muted mt-1"><?= e(__('admin.webcron_short', 'Web Cron URL (ping every minute if the server has no cron — keep it secret):')) ?></div>
+                        <div class="input-group mt-1">
+                            <input class="input" readonly value="<?= e($webCronUrl) ?>" style="font-family:monospace;font-size:.72rem">
+                            <button class="btn btn-outline btn-sm" type="button" data-copy="<?= e($webCronUrl) ?>">📋</button>
+                        </div>
                     </td>
                     <td><span class="badge badge-<?= $checks['cron_ok'] ? 'success' : 'danger' ?>"><?= $checks['cron_ok'] ? '✅ OK' : '❌ ' . e(__('common.down', 'Down')) ?></span></td>
                 </tr>

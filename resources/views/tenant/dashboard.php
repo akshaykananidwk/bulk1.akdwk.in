@@ -23,7 +23,17 @@ Layout::pushScript(url('/assets/vendor/apexcharts.min.js'));
     </div>
 <?php endif; ?>
 
-<?php if ($trialEndsAt !== null && strtotime((string) $trialEndsAt) > time()): ?>
+<?php $billingState = \App\Models\Tenant::billingState(\App\Core\Tenant::current() ?? []); ?>
+<?php if ($billingState === 'trial_expired' || $billingState === 'expired'): ?>
+    <div class="alert alert-danger">
+        <span>⛔</span>
+        <div>
+            <strong><?= $billingState === 'trial_expired' ? e(__('billing.trial_expired_title', 'Trial expired')) : e(__('billing.expired_title', 'Subscription expired')) ?></strong>
+            — <?= e(__('dashboard.expired_hint', 'pick a plan to keep using the platform.')) ?>
+            <a href="<?= e(url('/tenant/billing')) ?>"><?= e(__('dashboard.choose_plan', 'Choose a plan')) ?></a>
+        </div>
+    </div>
+<?php elseif ($trialEndsAt !== null && strtotime((string) $trialEndsAt) > time()): ?>
     <div class="alert alert-info">
         <span>⏳</span>
         <div><?= e(__('dashboard.trial_note', 'Trial ends')) ?> <strong><?= e(\App\Core\DateHelper::display($trialEndsAt, 'd M Y')) ?></strong> — <a href="<?= e(url('/tenant/billing')) ?>"><?= e(__('dashboard.upgrade', 'Upgrade now')) ?></a></div>

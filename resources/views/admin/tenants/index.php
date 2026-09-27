@@ -28,6 +28,7 @@
                 <td>
                     <?php $badge = match ($row['status']) { 'active' => 'success', 'suspended' => 'danger', 'pending' => 'warning', default => 'muted' }; ?>
                     <span class="badge badge-<?= e($badge) ?>"><?= e($row['status']) ?></span>
+                    <?php View::partial('partials/billing-state-badge', ['tenant' => $row]); ?>
                 </td>
                 <td class="text-sm text-muted"><?= $row['trial_ends_at'] ? e(\App\Core\DateHelper::display((string) $row['trial_ends_at'])) : '—' ?></td>
                 <td class="text-sm text-muted"><?= e(time_ago((string) $row['created_at'])) ?></td>

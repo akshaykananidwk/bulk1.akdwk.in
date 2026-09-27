@@ -2,6 +2,20 @@
 <?php View::start('content'); ?>
 <div class="page-header"><h1><?= e(__('nav.billing', 'Billing')) ?></h1></div>
 
+<?php $billingState = \App\Models\Tenant::billingState($workspace); ?>
+<?php if ($billingState === 'trial_expired' || $billingState === 'expired'): ?>
+    <div class="alert alert-danger">
+        <span>⛔</span>
+        <div>
+            <strong><?= $billingState === 'trial_expired' ? e(__('billing.trial_expired_title', 'Trial expired')) : e(__('billing.expired_title', 'Subscription expired')) ?></strong>
+            — <?= $billingState === 'trial_expired'
+                ? e(__('billing.trial_expired_on', 'your free trial ended on')) . ' ' . e(\App\Core\DateHelper::display((string) ($workspace['trial_ends_at'] ?? ''), 'd M Y'))
+                : e(__('billing.expired_on', 'your subscription ended on')) . ' ' . e(\App\Core\DateHelper::display((string) ($workspace['subscription_ends_at'] ?? ''), 'd M Y')) ?>.
+            <?= e(__('billing.expired_hint', 'Choose a plan below to continue using the platform.')) ?>
+        </div>
+    </div>
+<?php endif; ?>
+
 <div class="grid-2">
     <div class="card">
         <h3 class="card-title"><?= e(__('billing.current_plan', 'Current plan')) ?></h3>
@@ -17,7 +31,7 @@
                 $subActive = !empty($workspace['subscription_ends_at']) && $workspace['subscription_ends_at'] > $now;
                 ?>
                 <span class="badge badge-<?= ($trialActive || $subActive) ? 'success' : 'danger' ?>">
-                    <?= $subActive ? e(__('billing.active', 'Active')) : ($trialActive ? e(__('billing.trial', 'Trial')) : e(__('billing.expired_badge', 'Expired'))) ?>
+                    <?= $subActive ? e(__('billing.active', 'Active')) : ($trialActive ? e(__('billing.trial', 'Trial')) : ($billingState === 'trial_expired' ? e(__('billing.trial_expired_title', 'Trial expired')) : e(__('billing.expired_badge', 'Expired')))) ?>
                 </span>
             </div>
             <?php if ($trialActive): ?>
