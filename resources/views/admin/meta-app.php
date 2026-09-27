@@ -59,7 +59,7 @@
                 <?php endif; ?>
             </div>
         </div>
-        <p class="text-sm text-muted"><?= e(__('admin.webhook_fields', 'Subscribe to webhook fields: messages, message_template_status_update, phone_number_quality_update, account_update, template_category_update.')) ?></p>
+        <p class="text-sm text-muted"><?= e(__('admin.webhook_fields_v2', 'Subscribe to webhook fields: messages, message_template_status_update, phone_number_quality_update, account_update, template_category_update — and for WhatsApp Business app coexistence (QR): history, smb_app_state_sync, smb_message_echoes.')) ?></p>
     </div>
 </div>
 <?php View::end(); ?>

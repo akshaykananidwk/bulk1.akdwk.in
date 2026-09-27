@@ -640,7 +640,7 @@ CREATE TABLE IF NOT EXISTS `waba_accounts` (
   `name` VARCHAR(191) NULL,
   `currency` CHAR(3) NULL,
   `timezone_id` VARCHAR(10) NULL,
-  `token_mode` ENUM('embedded_signup','permanent_system_user','temporary_manual') NOT NULL DEFAULT 'embedded_signup',
+  `token_mode` ENUM('embedded_signup','coexistence','permanent_system_user','temporary_manual') NOT NULL DEFAULT 'embedded_signup',
   `access_token_encrypted` TEXT NOT NULL,
   `token_expires_at` DATETIME NULL,
   `token_expiry_warned_at` DATETIME NULL,

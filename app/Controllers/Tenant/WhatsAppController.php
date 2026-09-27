@@ -44,8 +44,10 @@ final class WhatsAppController extends Controller
         $data = $this->validate($request, [
             'code' => 'required|string',
             'waba_id' => 'required|string|max:64',
-            'phone_number_id' => 'required|string|max:64',
+            'phone_number_id' => 'nullable|string|max:64',
+            'mode' => 'nullable|string|max:20',
         ]);
+        $coexistence = ((string) ($data['mode'] ?? '')) === 'coexistence';
 
         // Plan limit on connected numbers
         [$allowed] = Tenant::withinLimit('waba_numbers');
@@ -58,7 +60,8 @@ final class WhatsAppController extends Controller
                 (int) Tenant::id(),
                 (string) $data['code'],
                 (string) $data['waba_id'],
-                (string) $data['phone_number_id']
+                (string) ($data['phone_number_id'] ?? ''),
+                $coexistence
             );
         } catch (\Throwable $e) {
             $this->fail($e->getMessage(), 422);

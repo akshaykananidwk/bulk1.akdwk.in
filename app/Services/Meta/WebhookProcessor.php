@@ -30,6 +30,10 @@ final class WebhookProcessor
                     'template_category_update' => self::handleTemplateCategory($value),
                     'phone_number_quality_update' => self::handleQualityUpdate($value),
                     'account_update', 'account_alerts', 'business_capability_update' => self::handleAccountUpdate($field, $value),
+                    // Coexistence (WhatsApp Business app + Cloud API on one number)
+                    'smb_message_echoes' => self::handleMessageEchoes($value),
+                    'history' => self::handleHistory($value),
+                    'smb_app_state_sync' => self::handleAppStateSync($value),
                     default => Logger::channel('webhook')->info('Unhandled webhook field: ' . $field),
                 };
             }
@@ -66,6 +70,147 @@ final class WebhookProcessor
         // Status updates
         foreach ((array) ($value['statuses'] ?? []) as $status) {
             self::handleStatus($tenantId, $status);
+        }
+    }
+
+    // -- Coexistence fields -------------------------------------------------------
+
+    private static function phoneFromValue(array $value): ?array
+    {
+        $phoneNumberId = (string) ($value['metadata']['phone_number_id'] ?? '');
+        $phone = $phoneNumberId !== ''
+            ? DB::table('phone_numbers')->where('phone_number_id', $phoneNumberId)->first()
+            : null;
+        if ($phone === null) {
+            Logger::channel('webhook')->warning('Coexistence webhook for unknown phone_number_id', ['id' => $phoneNumberId]);
+        }
+        return $phone;
+    }
+
+    /** Messages the business sent from the WhatsApp Business mobile app. */
+    private static function handleMessageEchoes(array $value): void
+    {
+        $phone = self::phoneFromValue($value);
+        if ($phone === null) {
+            return;
+        }
+        foreach ((array) ($value['message_echoes'] ?? []) as $message) {
+            self::storeSyncedMessage($phone, (string) ($message['to'] ?? ''), $message, 'out', true);
+        }
+    }
+
+    /** Up to 180 days of chat history shared from the WhatsApp Business app. */
+    private static function handleHistory(array $value): void
+    {
+        $phone = self::phoneFromValue($value);
+        if ($phone === null) {
+            return;
+        }
+        foreach ((array) ($value['history'] ?? []) as $chunk) {
+            if (!empty($chunk['errors'])) {
+                // e.g. the business declined to share history
+                Logger::channel('webhook')->info('History sync not shared', ['errors' => $chunk['errors']]);
+                continue;
+            }
+            foreach ((array) ($chunk['threads'] ?? []) as $thread) {
+                $contactPhone = (string) ($thread['id'] ?? '');
+                foreach ((array) ($thread['messages'] ?? []) as $message) {
+                    $direction = ((string) ($message['from'] ?? '')) === $contactPhone ? 'in' : 'out';
+                    self::storeSyncedMessage($phone, $contactPhone, $message, $direction, false);
+                }
+            }
+        }
+    }
+
+    /** Contacts from the WhatsApp Business app's address book. */
+    private static function handleAppStateSync(array $value): void
+    {
+        $phone = self::phoneFromValue($value);
+        if ($phone === null) {
+            return;
+        }
+        \App\Core\Tenant::setId((int) $phone['tenant_id']);
+        foreach ((array) ($value['state_sync'] ?? []) as $item) {
+            if (($item['type'] ?? '') !== 'contact' || ($item['action'] ?? 'add') !== 'add') {
+                continue;
+            }
+            $number = (string) ($item['contact']['phone_number'] ?? '');
+            if ($number === '') {
+                continue;
+            }
+            $name = (string) ($item['contact']['full_name'] ?? ($item['contact']['first_name'] ?? ''));
+            Contact::firstOrCreateByPhone($number, $name !== '' ? $name : null, 'whatsapp_app');
+        }
+    }
+
+    /**
+     * Store an echo / history message without firing bots, unread counters or
+     * opt-out handling (the business already handled these on the phone).
+     */
+    private static function storeSyncedMessage(array $phone, string $contactPhone, array $message, string $direction, bool $live): void
+    {
+        $wamid = (string) ($message['id'] ?? '');
+        if ($wamid === '' || $contactPhone === '' || DB::table('messages')->where('wamid', $wamid)->exists()) {
+            return;
+        }
+        $tenantId = (int) $phone['tenant_id'];
+        \App\Core\Tenant::setId($tenantId);
+        $contact = Contact::firstOrCreateByPhone($contactPhone, null, 'whatsapp_app');
+
+        $conversation = DB::table('conversations')
+            ->where('tenant_id', $tenantId)
+            ->where('contact_id', $contact['id'])
+            ->where('phone_number_id', $phone['id'])
+            ->first();
+        $conversationId = $conversation !== null ? (int) $conversation['id'] : DB::table('conversations')->insert([
+            'tenant_id' => $tenantId,
+            'contact_id' => (int) $contact['id'],
+            'phone_number_id' => (int) $phone['id'],
+            'status' => 'open',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        [$type, $body, $mediaMetaId, $mediaMime] = self::parseInbound($message);
+        $timestamp = isset($message['timestamp']) ? date('Y-m-d H:i:s', (int) $message['timestamp']) : now();
+        $status = strtolower((string) ($message['history_context']['status'] ?? ($direction === 'in' ? 'delivered' : 'sent')));
+        if (!in_array($status, ['sent', 'delivered', 'read', 'failed'], true)) {
+            $status = $direction === 'in' ? 'delivered' : 'sent';
+        }
+
+        DB::table('messages')->insert([
+            'tenant_id' => $tenantId,
+            'conversation_id' => $conversationId,
+            'contact_id' => (int) $contact['id'],
+            'phone_number_id' => (int) $phone['id'],
+            'wamid' => $wamid,
+            'direction' => $direction,
+            'type' => $type,
+            'body' => $body,
+            'media_meta_id' => $mediaMetaId,
+            'media_mime' => $mediaMime,
+            'payload' => json_encode($message, JSON_UNESCAPED_UNICODE),
+            'status' => $status,
+            'created_at' => $timestamp,
+            'updated_at' => now(),
+        ]);
+
+        // Keep the conversation preview current (only if this message is newer)
+        $prefix = DB::prefix();
+        DB::query(
+            'UPDATE `' . $prefix . 'conversations` SET `last_message_preview` = ?, `last_message_at` = ?, `updated_at` = ? '
+            . 'WHERE `id` = ? AND (`last_message_at` IS NULL OR `last_message_at` <= ?)',
+            [mb_substr($body, 0, 255), $timestamp, now(), $conversationId, $timestamp]
+        );
+
+        if ($live) {
+            Event::publish('inbox', 'message.new', [
+                'conversation_id' => $conversationId,
+                'direction' => $direction,
+                'type' => $type,
+                'contact_name' => $contact['name'] ?? $contactPhone,
+                'preview' => Str::limit($body, 80),
+            ], $tenantId);
         }
     }
 

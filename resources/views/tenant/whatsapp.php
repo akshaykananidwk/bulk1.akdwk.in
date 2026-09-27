@@ -14,7 +14,8 @@
         <p class="text-muted"><?= e(__('whatsapp.none_sub', 'Use the official Meta Embedded Signup, or connect manually with an existing token.')) ?></p>
         <div class="flex gap-2" style="justify-content:center">
             <?php if ($metaApp !== null && !empty($metaApp['config_id'])): ?>
-                <button class="btn btn-primary btn-lg" id="fb-connect-btn">🔗 <?= e(__('whatsapp.connect_meta', 'Connect with Meta')) ?></button>
+                <button class="btn btn-primary btn-lg js-es-btn" data-mode="coexistence">📲 <?= e(__('whatsapp.connect_coex', 'Connect existing WhatsApp Business App (QR)')) ?></button>
+                <button class="btn btn-outline btn-lg js-es-btn" data-mode="cloud">🔗 <?= e(__('whatsapp.connect_meta', 'Connect new number (Cloud API)')) ?></button>
             <?php else: ?>
                 <span class="badge badge-warning"><?= e(__('whatsapp.app_not_configured', 'Embedded Signup unavailable — platform Meta App not configured')) ?></span>
             <?php endif; ?>
@@ -71,7 +72,8 @@
 
     <div class="flex gap-2 mb-4">
         <?php if ($metaApp !== null && !empty($metaApp['config_id'])): ?>
-            <button class="btn btn-primary" id="fb-connect-btn">🔗 <?= e(__('whatsapp.connect_another', 'Connect another account')) ?></button>
+            <button class="btn btn-primary js-es-btn" data-mode="coexistence">📲 <?= e(__('whatsapp.connect_coex', 'Connect existing WhatsApp Business App (QR)')) ?></button>
+            <button class="btn btn-outline js-es-btn" data-mode="cloud">🔗 <?= e(__('whatsapp.connect_another', 'Connect new number (Cloud API)')) ?></button>
         <?php endif; ?>
         <button class="btn btn-outline" x-data x-on:click="document.getElementById('manual-modal').classList.remove('hidden')">⚙️ <?= e(__('whatsapp.connect_manual', 'Manual connect')) ?></button>
     </div>
@@ -121,71 +123,132 @@
 <?php if ($metaApp !== null && !empty($metaApp['config_id'])): ?>
 <script>
 (function () {
-    var btn = document.getElementById('fb-connect-btn');
-    if (!btn) { return; }
+    var buttons = document.querySelectorAll('.js-es-btn');
+    if (!buttons.length) { return; }
 
-    var sessionInfo = null;
+    var CALLBACK = '<?= e(url('/tenant/whatsapp/embedded-callback')) ?>';
+    var CONFIG_ID = '<?= e($metaApp['config_id']) ?>';
+    var APP_ID = '<?= e($metaApp['app_id']) ?>';
+    var API_VERSION = '<?= e($metaApp['api_version'] ?: 'v24.0') ?>';
 
-    // Capture WABA + phone number IDs from the Embedded Signup message event
+    var state = { mode: 'cloud', code: null, session: null, sent: false, busy: false };
+
+    function setBusy(on) {
+        state.busy = on;
+        buttons.forEach(function (b) { b.disabled = on; });
+    }
+
+    // Embedded Signup session logging (v3). Meta posts this from facebook.com.
     window.addEventListener('message', function (event) {
-        if (event.origin !== 'https://www.facebook.com' && event.origin !== 'https://web.facebook.com') { return; }
-        try {
-            var data = JSON.parse(event.data);
-            if (data.type === 'WA_EMBEDDED_SIGNUP' && data.event === 'FINISH') {
-                sessionInfo = data.data; // { waba_id, phone_number_id }
-            }
-        } catch (e) { /* other messages */ }
+        if (!/^https:\/\/([a-z0-9-]+\.)?facebook\.com$/.test(event.origin)) { return; }
+        var data;
+        try { data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; } catch (e) { return; }
+        if (!data || data.type !== 'WA_EMBEDDED_SIGNUP') { return; }
+
+        switch (data.event) {
+            case 'FINISH':                                  // new number, Cloud API
+            case 'FINISH_ONLY_WABA':                        // WABA created, no number yet
+            case 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING': // coexistence (QR)
+                state.session = data.data || {};
+                if (data.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING') { state.mode = 'coexistence'; }
+                trySubmit();
+                break;
+            case 'CANCEL':
+                var step = data.data && data.data.current_step ? ' (' + data.data.current_step + ')' : '';
+                kwc.toast('<?= e(__('whatsapp.signup_cancelled', 'Signup was cancelled')) ?>' + step, 'warning');
+                setBusy(false);
+                break;
+            case 'ERROR':
+                kwc.toast((data.data && data.data.error_message) || 'Meta signup error', 'danger');
+                setBusy(false);
+                break;
+        }
     });
 
-    function launchSignup() {
-        FB.login(function (response) {
-            if (response.authResponse && response.authResponse.code) {
-                if (!sessionInfo || !sessionInfo.waba_id) {
-                    kwc.toast('<?= e(__('whatsapp.signup_incomplete', 'Signup incomplete — please try again.')) ?>', 'danger');
-                    return;
-                }
-                kwc.fetch('<?= e(url('/tenant/whatsapp/embedded-callback')) ?>', {
-                    method: 'POST',
-                    json: {
-                        code: response.authResponse.code,
-                        waba_id: sessionInfo.waba_id,
-                        phone_number_id: sessionInfo.phone_number_id
-                    }
-                }).then(function (result) {
-                    if (result.ok) {
-                        kwc.toast(result.data.message || 'Connected!', 'success');
-                        setTimeout(function () { window.location.reload(); }, 1200);
-                    } else {
-                        kwc.toast(result.data.message || 'Connection failed', 'danger');
-                    }
-                });
+    // The FB.login callback and the message event arrive in either order —
+    // submit only once both the code and the WABA id are known.
+    function trySubmit() {
+        if (state.sent || !state.code || !state.session || !state.session.waba_id) { return; }
+        state.sent = true;
+        kwc.toast('<?= e(__('whatsapp.connecting', 'Connecting your WhatsApp account…')) ?>', 'info');
+        kwc.fetch(CALLBACK, {
+            method: 'POST',
+            json: {
+                code: state.code,
+                waba_id: state.session.waba_id,
+                phone_number_id: state.session.phone_number_id || '',
+                mode: state.mode
             }
-        }, {
-            config_id: '<?= e($metaApp['config_id']) ?>',
-            response_type: 'code',
-            override_default_response_type: true,
-            extras: { setup: {}, featureType: '', sessionInfoVersion: '3' }
+        }).then(function (result) {
+            if (result.ok) {
+                kwc.toast(result.data.message || 'Connected!', 'success');
+                setTimeout(function () { window.location.reload(); }, 1200);
+            } else {
+                kwc.toast((result.data && result.data.message) || 'Connection failed', 'danger');
+                setBusy(false);
+            }
         });
     }
 
-    btn.addEventListener('click', function () {
-        if (window.FB) { launchSignup(); return; }
-        // Load the Facebook JS SDK on demand (external by necessity — Meta requirement)
+    function launchSignup() {
+        state.code = null; state.session = null; state.sent = false;
+        setBusy(true);
+        var extras = { setup: {}, sessionInfoVersion: '3' };
+        if (state.mode === 'coexistence') { extras.featureType = 'whatsapp_business_app_onboarding'; }
+
+        FB.login(function (response) {
+            if (response.authResponse && response.authResponse.code) {
+                state.code = response.authResponse.code;
+                trySubmit();
+                // Session event should already be here; give it 15s before giving up
+                setTimeout(function () {
+                    if (!state.sent) {
+                        kwc.toast('<?= e(__('whatsapp.signup_incomplete', 'Signup incomplete — please finish every step in the Meta window and try again.')) ?>', 'danger');
+                        setBusy(false);
+                    }
+                }, 15000);
+            } else {
+                setBusy(false);
+            }
+        }, {
+            config_id: CONFIG_ID,
+            response_type: 'code',
+            override_default_response_type: true,
+            extras: extras
+        });
+    }
+
+    var sdkReady = false, pending = null;
+    function withSdk(cb) {
+        if (sdkReady) { cb(); return; }
+        pending = cb;
+        if (document.getElementById('facebook-jssdk')) { return; }
         window.fbAsyncInit = function () {
-            FB.init({
-                appId: '<?= e($metaApp['app_id']) ?>',
-                autoLogAppEvents: true,
-                xfbml: false,
-                version: '<?= e($metaApp['api_version']) ?>'
-            });
-            launchSignup();
+            FB.init({ appId: APP_ID, autoLogAppEvents: true, xfbml: false, version: API_VERSION });
+            sdkReady = true;
+            if (pending) { var p = pending; pending = null; p(); }
         };
         var script = document.createElement('script');
+        script.id = 'facebook-jssdk';
         script.src = 'https://connect.facebook.net/en_US/sdk.js';
-        script.async = true;
-        script.defer = true;
-        script.crossOrigin = 'anonymous';
+        script.async = true; script.defer = true; script.crossOrigin = 'anonymous';
+        script.onerror = function () {
+            kwc.toast('Facebook SDK could not load — disable ad-blocker and retry.', 'danger');
+            setBusy(false);
+        };
         document.head.appendChild(script);
+    }
+
+    // Pre-load the SDK so the click opens the Meta popup directly
+    // (a popup opened after an async load is often blocked by the browser).
+    withSdk(function () {});
+
+    buttons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            if (state.busy) { return; }
+            state.mode = btn.getAttribute('data-mode') === 'coexistence' ? 'coexistence' : 'cloud';
+            withSdk(launchSignup);
+        });
     });
 })();
 </script>

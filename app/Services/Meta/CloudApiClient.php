@@ -31,7 +31,18 @@ final class CloudApiClient
             throw new \RuntimeException('WABA access token cannot be decrypted — reconnect the account.');
         }
         $this->token = $token;
-        $this->apiVersion = (string) (setting('meta_api_version') ?: config('meta.api_version', 'v21.0'));
+        // Prefer the version saved on the platform Meta App (Admin → Meta App),
+        // then the global setting, then config.
+        $appVersion = null;
+        try {
+            $app = !empty($wabaAccount['meta_app_id'])
+                ? DB::table('meta_apps')->where('id', (int) $wabaAccount['meta_app_id'])->first()
+                : DB::table('meta_apps')->orderBy('is_default', 'DESC')->orderBy('id', 'ASC')->first();
+            $appVersion = $app['api_version'] ?? null;
+        } catch (\Throwable) {
+            $appVersion = null;
+        }
+        $this->apiVersion = (string) ($appVersion ?: setting('meta_api_version') ?: config('meta.api_version', 'v24.0'));
         $this->graphUrl = (string) config('meta.graph_url', 'https://graph.facebook.com');
     }
 
@@ -180,6 +191,20 @@ final class CloudApiClient
         $response = $this->http()->post('/' . $phoneNumberId . '/register', [
             'messaging_product' => 'whatsapp',
             'pin' => $pin,
+        ]);
+        return $this->unwrap($response);
+    }
+
+    /**
+     * Coexistence: ask Meta to replay the WhatsApp Business app's contacts
+     * ('smb_app_state_sync') or last-180-days chat history ('history') to our
+     * webhook. Must be called within 24 hours of onboarding.
+     */
+    public function syncSmbAppData(string $phoneNumberId, string $syncType): array
+    {
+        $response = $this->http()->post('/' . $phoneNumberId . '/smb_app_data', [
+            'messaging_product' => 'whatsapp',
+            'sync_type' => $syncType,
         ]);
         return $this->unwrap($response);
     }

@@ -18,7 +18,7 @@ final class EmbeddedSignupService
      * Complete the embedded-signup flow:
      * exchange code → business token → subscribe app → register phone → sync numbers.
      */
-    public static function complete(int $tenantId, string $code, string $wabaId, string $phoneNumberId): array
+    public static function complete(int $tenantId, string $code, string $wabaId, string $phoneNumberId = '', bool $coexistence = false): array
     {
         $app = self::defaultApp();
         if ($app === null) {
@@ -31,7 +31,7 @@ final class EmbeddedSignupService
 
         // 1. Exchange the returned code for a business access token
         $graphUrl = (string) config('meta.graph_url', 'https://graph.facebook.com');
-        $apiVersion = (string) ($app['api_version'] ?: 'v21.0');
+        $apiVersion = (string) ($app['api_version'] ?: 'v24.0');
         $response = Http::make()
             ->timeout(30)->retry(2, [2, 8])->logTo('meta')
             ->get($graphUrl . '/' . $apiVersion . '/oauth/access_token', [
@@ -47,7 +47,7 @@ final class EmbeddedSignupService
             throw new \RuntimeException(__('whatsapp.token_exchange_failed', 'Could not complete WhatsApp connection: ') . $message);
         }
 
-        return self::connect($tenantId, $wabaId, $phoneNumberId, $token, 'embedded_signup', (int) $app['id']);
+        return self::connect($tenantId, $wabaId, $phoneNumberId, $token, $coexistence ? 'coexistence' : 'embedded_signup', (int) $app['id']);
     }
 
     /**
@@ -95,32 +95,46 @@ final class EmbeddedSignupService
             Logger::channel('meta')->warning('WABA info fetch failed', ['error' => $e->getMessage()]);
         }
 
-        // 3. Subscribe our app to the WABA's webhooks
+        // 3. Subscribe our app to the WABA's webhooks. Without this no inbound
+        //    message or delivery status ever reaches us, so it is fatal.
         try {
             $client->subscribeApp();
             DB::table('waba_accounts')->where('id', $wabaRowId)->update(['subscribed_at' => now()]);
         } catch (MetaApiException $e) {
-            Logger::channel('meta')->warning('subscribed_apps failed', ['error' => $e->getMessage()]);
+            Logger::channel('meta')->error('subscribed_apps failed', ['error' => $e->getMessage()]);
+            DB::table('waba_accounts')->where('id', $wabaRowId)->update(['status' => 'error']);
+            throw new \RuntimeException(__('whatsapp.subscribe_failed', 'Connected to Meta, but webhook subscription failed: ') . $e->getMessage());
         }
 
-        // 4. Register the phone with a generated 6-digit PIN (idempotent-ish;
-        //    already-registered numbers return an error we tolerate)
-        $pin = (string) random_int(100000, 999999);
-        $registered = false;
-        try {
-            $client->registerPhone($phoneNumberId, $pin);
-            $registered = true;
-        } catch (MetaApiException $e) {
-            Logger::channel('meta')->info('Phone register response', ['error' => $e->getMessage()]);
-        }
-
-        // 5. Sync all phone numbers on this WABA
+        // 4. Fetch the WABA's phone numbers (coexistence sessions do not send
+        //    a phone_number_id, so we pick it from this list)
         $numbers = [];
         try {
             $list = $client->getPhoneNumbers();
             $numbers = (array) ($list['data'] ?? []);
         } catch (MetaApiException $e) {
             Logger::channel('meta')->warning('phone_numbers fetch failed', ['error' => $e->getMessage()]);
+        }
+        if ($phoneNumberId === '' && !empty($numbers[0]['id'])) {
+            $phoneNumberId = (string) $numbers[0]['id'];
+        }
+        if ($phoneNumberId === '') {
+            throw new \RuntimeException(__('whatsapp.no_number', 'No phone number was found on this WhatsApp Business Account.'));
+        }
+
+        // 5. Register the phone for Cloud API — NOT for coexistence numbers,
+        //    which Meta has already registered (registering would fail/disturb them).
+        $pin = null;
+        $registered = $mode === 'coexistence';
+        if ($mode !== 'coexistence') {
+            $pin = (string) random_int(100000, 999999);
+            try {
+                $client->registerPhone($phoneNumberId, $pin);
+                $registered = true;
+            } catch (MetaApiException $e) {
+                // "already registered" is fine; anything else is logged for support
+                Logger::channel('meta')->warning('Phone register response', ['error' => $e->getMessage()]);
+            }
         }
 
         $hasDefault = DB::table('phone_numbers')->where('tenant_id', $tenantId)->where('is_default', 1)->exists();
@@ -141,7 +155,9 @@ final class EmbeddedSignupService
             ];
             if ($numberId === $phoneNumberId) {
                 $numberRow['is_registered'] = $registered ? 1 : 0;
-                $numberRow['pin_encrypted'] = Crypt::encrypt($pin);
+                if ($pin !== null) {
+                    $numberRow['pin_encrypted'] = Crypt::encrypt($pin);
+                }
                 if (!$hasDefault) {
                     $numberRow['is_default'] = 1;
                     $hasDefault = true;
@@ -161,7 +177,19 @@ final class EmbeddedSignupService
             }
         }
 
-        // 6. Initial template sync (async)
+        // 6. Coexistence: pull the WhatsApp Business app's contacts and chat
+        //    history (last 180 days). Meta only allows this within 24h of onboarding.
+        if ($mode === 'coexistence') {
+            foreach (['smb_app_state_sync', 'history'] as $syncType) {
+                try {
+                    $client->syncSmbAppData($phoneNumberId, $syncType);
+                } catch (MetaApiException $e) {
+                    Logger::channel('meta')->warning('smb_app_data sync failed', ['type' => $syncType, 'error' => $e->getMessage()]);
+                }
+            }
+        }
+
+        // 7. Initial template sync (async)
         \App\Core\Queue::push(\App\Jobs\SyncTemplatesJob::class, ['waba_account_id' => $wabaRowId], 'default', 5, 0, $tenantId);
 
         audit_log('whatsapp.connected', 'waba_account', $wabaRowId, ['waba_id' => $wabaId, 'mode' => $mode]);
