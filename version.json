@@ -15,6 +15,7 @@
     ],
     "breaking": false,
     "changelog": [
+        "PHP 8.5 compatibility: Pdo\\Mysql::ATTR_INIT_COMMAND and no more curl_close(). Both were deprecated in 8.5 and broke cron and every Meta API call.",
         "WhatsApp Business app coexistence (QR) onboarding + Embedded Signup fixes (race, popup blocking, CANCEL/ERROR events).",
         "Coexistence webhooks: smb_message_echoes, history, smb_app_state_sync; history/echo media is downloaded when under 14 days old.",
         "Web Cron URL (/cron/run/<key>) for servers without a system cron; Meta webhooks are also processed right after the 200 reply.",

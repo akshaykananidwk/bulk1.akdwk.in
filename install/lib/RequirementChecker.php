@@ -145,7 +145,7 @@ final class RequirementChecker
             CURLOPT_SSL_VERIFYHOST => 0,
         ]);
         $body = curl_exec($ch);
-        curl_close($ch);
+        unset($ch); // curl_close() is a no-op since PHP 8.0 and deprecated in 8.5
         if ($body === false) {
             return null;
         }

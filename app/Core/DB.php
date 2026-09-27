@@ -46,7 +46,7 @@ final class DB
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                     PDO::ATTR_EMULATE_PREPARES => false,
-                    PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci, sql_mode='STRICT_TRANS_TABLES,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO'",
+                    self::initCommandAttribute() => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci, sql_mode='STRICT_TRANS_TABLES,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO'",
                 ]);
                 return;
             } catch (PDOException $e) {
@@ -59,7 +59,19 @@ final class DB
         }
     }
 
-    public static function prefix(): string
+    /**
+     * PHP 8.5 deprecates PDO::MYSQL_ATTR_INIT_COMMAND in favour of
+     * Pdo\Mysql::ATTR_INIT_COMMAND (8.4+); our error handler turns the
+     * deprecation into an exception, so pick whichever this PHP has.
+     */
+    private static function initCommandAttribute(): int
+    {
+        return class_exists(\Pdo\Mysql::class)
+            ? \Pdo\Mysql::ATTR_INIT_COMMAND
+            : PDO::MYSQL_ATTR_INIT_COMMAND;
+    }
+
+        public static function prefix(): string
     {
         if (self::$pdo === null) {
             self::$prefix = (string) Config::get('db.prefix', '');
