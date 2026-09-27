@@ -4,22 +4,26 @@ declare(strict_types=1);
 
 namespace App\Middleware;
 
+use App\Core\Auth;
 use App\Core\Redirect;
 use App\Core\Request;
 use App\Core\Response;
 use App\Core\Tenant;
 
 /**
- * Blocks tenants whose trial/subscription has expired (except billing pages).
+ * Locks the tenant panel to the billing page once the trial/subscription has
+ * expired. Only applied to the /tenant route group, so webhooks, the public
+ * API, cron and the admin panel keep working. A super admin (including one
+ * impersonating a tenant user) is never blocked.
  */
 final class SubscriptionMiddleware
 {
-    private const ALLOWED_PREFIXES = ['/tenant/billing', '/tenant/subscription', '/tenant/profile', '/logout'];
+    private const ALLOWED_PREFIXES = ['/tenant/billing'];
 
     public function handle(Request $request, callable $next): void
     {
         $tenant = Tenant::current();
-        if ($tenant === null) {
+        if ($tenant === null || Auth::isSuperAdmin() || Auth::isImpersonating()) {
             $next();
             return;
         }
@@ -39,7 +43,12 @@ final class SubscriptionMiddleware
             if ($request->wantsJson()) {
                 Response::json(['success' => false, 'message' => $message], 402);
             }
-            Redirect::to('/tenant/billing')->with('warning', $message)->send();
+            // Team members without billing access cannot open the billing page
+            if (!Auth::can('billing.view')) {
+                Response::abort(402, $message . ' ' . __('billing.ask_owner', 'Please ask your workspace owner to renew.'));
+            }
+            // The billing page itself explains the expiry, so no extra flash
+            Redirect::to('/tenant/billing')->send();
         }
 
         $next();

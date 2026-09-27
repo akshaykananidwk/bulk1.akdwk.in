@@ -13,6 +13,19 @@
     var pollTimer = null;
     var channels = [];
     var mode = null; // 'sse' | 'poll'
+    var seen = {};   // event ids already dispatched (SSE→poll fallback, reconnects)
+    var leaving = false; // page navigation closes the stream — that is not an SSE failure
+    window.addEventListener('pagehide', function () { leaving = true; });
+    window.addEventListener('beforeunload', function () { leaving = true; });
+
+    function dispatch(id, type, payload) {
+        if (id) {
+            if (seen[id]) { return; }
+            seen[id] = true;
+            if (id > lastEventId) { lastEventId = id; }
+        }
+        emit(type, payload || {});
+    }
 
     function emit(type, payload) {
         (listeners[type] || []).forEach(function (callback) {
@@ -26,8 +39,7 @@
     function handleEvent(raw) {
         var data;
         try { data = JSON.parse(raw); } catch (e) { return; }
-        if (data.id && data.id > lastEventId) { lastEventId = data.id; }
-        emit(data.type, data.payload || {});
+        dispatch(data.id, data.type, data.payload);
     }
 
     function startSse() {
@@ -41,7 +53,7 @@
         };
         source.onerror = function () {
             // EventSource auto-reconnects; if it closes hard, fall back to polling
-            if (source.readyState === EventSource.CLOSED) {
+            if (!leaving && source && source.readyState === EventSource.CLOSED) {
                 try { localStorage.setItem('kwc_rt_mode', 'poll'); } catch (err) { /* ignore */ }
                 source = null;
                 startPolling();
@@ -57,9 +69,9 @@
                 headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
             }).then(function (r) { return r.json(); }).then(function (data) {
                 (data.events || []).forEach(function (event) {
-                    if (event.id > lastEventId) { lastEventId = event.id; }
-                    emit(event.type, event.payload || {});
+                    dispatch(event.id, event.type, event.payload);
                 });
+                if (data.last_id && data.last_id > lastEventId) { lastEventId = data.last_id; }
             }).catch(function () { /* transient network error — next tick retries */ });
         };
         poll();

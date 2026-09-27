@@ -3,12 +3,13 @@
 declare(strict_types=1);
 
 /**
- * Tenant panel routes. All wrapped in auth + tenant + csrf middleware.
+ * Tenant panel routes. All wrapped in auth + tenant + subscription + csrf middleware
+ * (subscription: expired trial/plan → only /tenant/billing is reachable).
  */
 
 use App\Core\Router;
 
-Router::group(['prefix' => '/tenant', 'middleware' => ['auth', 'tenant', 'csrf'], 'name' => 'tenant.'], function () {
+Router::group(['prefix' => '/tenant', 'middleware' => ['auth', 'tenant', 'subscription', 'csrf'], 'name' => 'tenant.'], function () {
     Router::get('/', [\App\Controllers\Tenant\DashboardController::class, 'index'])->name('dashboard');
     Router::get('/dashboard', [\App\Controllers\Tenant\DashboardController::class, 'index']);
 

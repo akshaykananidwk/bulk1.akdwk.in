@@ -31,6 +31,10 @@ final class SseController extends Controller
         $lastEventId = (int) ($request->query('last_id')
             ?? $request->header('Last-Event-ID')
             ?? 0);
+        // Fresh connection: start from now, don't replay the last 24h of events
+        if ($lastEventId <= 0) {
+            $lastEventId = Event::latestId($tenantId);
+        }
 
         // Release the session lock IMMEDIATELY so other requests are not blocked.
         session_write_close();
@@ -56,7 +60,9 @@ final class SseController extends Controller
             ob_end_flush();
         }
 
-        echo "retry: 2000\n\n";
+        // An id-only block sets the browser's Last-Event-ID without firing an
+        // event, so an auto-reconnect resumes from here even if nothing arrived.
+        echo "retry: 2000\nid: " . $lastEventId . "\n\n";
         flush();
 
         $loopSeconds = (int) config('app.sse.loop_seconds', 30);
@@ -110,6 +116,10 @@ final class SseController extends Controller
         }
         $channels = $this->channels($request);
         $lastEventId = (int) $request->query('last_id', 0);
+        if ($lastEventId <= 0) {
+            // First poll: hand back the cursor only (no replay of old events)
+            $this->json(['events' => [], 'last_id' => Event::latestId($tenantId)]);
+        }
 
         $events = Event::after($lastEventId, $tenantId, $channels, (int) Auth::id());
         $out = array_map(fn (array $event) => [
@@ -118,7 +128,7 @@ final class SseController extends Controller
             'payload' => json_decode((string) ($event['payload'] ?? 'null'), true),
         ], $events);
 
-        $this->json(['events' => $out]);
+        $this->json(['events' => $out, 'last_id' => $out !== [] ? max(array_column($out, 'id')) : $lastEventId]);
     }
 
     public function presencePing(Request $request): never

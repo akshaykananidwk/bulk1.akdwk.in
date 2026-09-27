@@ -15,6 +15,8 @@
     ],
     "breaking": false,
     "changelog": [
+        "Expired trial/subscription locks the tenant panel to the Billing page. Super admin and impersonation are never blocked, and webhooks, API and cron keep running.",
+        "Inbox: old messages no longer pop up again on page load, no duplicate popups, and realtime stays on SSE after navigation.",
         "PHP 8.5 compatibility: Pdo\\Mysql::ATTR_INIT_COMMAND and no more curl_close(). Both were deprecated in 8.5 and broke cron and every Meta API call.",
         "WhatsApp Business app coexistence (QR) onboarding + Embedded Signup fixes (race, popup blocking, CANCEL/ERROR events).",
         "Coexistence webhooks: smb_message_echoes, history, smb_app_state_sync; history/echo media is downloaded when under 14 days old.",

@@ -55,6 +55,15 @@ final class Event
     }
 
     /**
+     * Newest event id for a tenant — the starting cursor for a fresh client,
+     * so a page load only receives events that happen from now on.
+     */
+    public static function latestId(int $tenantId): int
+    {
+        return (int) (DB::table('events')->where('tenant_id', $tenantId)->max('id') ?? 0);
+    }
+
+    /**
      * Fetch real-time events after a cursor for the SSE stream.
      */
     public static function after(int $lastEventId, int $tenantId, array $channels, ?int $userId = null): array
