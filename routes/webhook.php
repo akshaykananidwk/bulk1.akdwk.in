@@ -16,3 +16,7 @@ Router::post('/webhook/payment/{gateway}', [\App\Controllers\Webhook\PaymentWebh
 
 Router::post('/webhook/ecom/{store}', [\App\Controllers\Webhook\EcomWebhookController::class, 'receive'])
     ->where('store', '\d+');
+
+// Web cron for servers without a system cron (ping every minute from cron-job.org)
+Router::get('/cron/run/{key}', [\App\Controllers\Webhook\WebCronController::class, 'run'])
+    ->where('key', '[a-f0-9]{32}');

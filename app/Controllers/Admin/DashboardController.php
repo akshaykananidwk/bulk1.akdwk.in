@@ -59,6 +59,7 @@ final class DashboardController extends Controller
             'cronStale' => $cronStale,
             'cronLastRun' => $heartbeat,
             'cronCommand' => '* * * * * ' . $phpBinary . ' ' . ROOT_PATH . '/cron/scheduler.php >> /dev/null 2>&1',
+            'webCronUrl' => \App\Controllers\Webhook\WebCronController::url(),
             'mailLastError' => (string) setting('mail_last_error', ''),
         ], 'layouts/admin');
     }

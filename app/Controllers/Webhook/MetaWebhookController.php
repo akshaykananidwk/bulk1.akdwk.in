@@ -61,6 +61,34 @@ final class MetaWebhookController extends Controller
 
         Queue::push(\App\Jobs\ProcessWebhookJob::class, ['webhook_log_id' => $logId], 'webhook', 1, 0, null);
 
+        // No-cron safety net: after Meta has its 200, drain a few webhook jobs
+        // in this same request so the inbox stays live even without cron.
+        register_shutdown_function(static function (): void {
+            if (!function_exists('fastcgi_finish_request')) {
+                return;
+            }
+            fastcgi_finish_request();
+            ignore_user_abort(true);
+            @set_time_limit(30);
+            $lock = \App\Core\Scheduler::acquireLock('webhook_inline', 60);
+            if ($lock === null) {
+                return; // another request (or cron) is already draining
+            }
+            try {
+                $deadline = microtime(true) + 15;
+                $workerId = 'inline-' . substr(sha1(uniqid('', true)), 0, 10);
+                for ($i = 0; $i < 25 && microtime(true) < $deadline; $i++) {
+                    if (!Queue::work(['webhook'], $workerId)) {
+                        break;
+                    }
+                }
+            } catch (\Throwable $e) {
+                Logger::channel('webhook')->error('Inline webhook drain failed', ['error' => $e->getMessage()]);
+            } finally {
+                \App\Core\Scheduler::releaseLock($lock);
+            }
+        });
+
         Response::json(['success' => true]);
     }
 

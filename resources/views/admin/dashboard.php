@@ -21,6 +21,12 @@ Layout::pushScript(url('/assets/vendor/apexcharts.min.js'));
             </div>
             <div class="text-xs mt-1"><?= e(__('admin.cron_aapanel', 'aaPanel: Cron → Add Task → Shell Script → period "1 minute" → paste the php command (without the * * * * * part).')) ?>
                 <?= $cronLastRun !== null ? e(__('admin.cron_last', 'Last run: ') . time_ago(date('Y-m-d H:i:s', (int) $cronLastRun))) : e(__('admin.cron_never', 'It has never run.')) ?></div>
+            <div class="text-xs mt-2"><strong><?= e(__('admin.webcron_title', 'No cron on your server? Use Web Cron:')) ?></strong>
+                <?= e(__('admin.webcron_body', 'create a free job at cron-job.org that opens this URL every 1 minute (keep it secret):')) ?></div>
+            <div class="input-group mt-1">
+                <input class="input" readonly value="<?= e($webCronUrl ?? '') ?>" style="font-family:monospace;font-size:.78rem">
+                <button class="btn btn-outline" type="button" data-copy="<?= e($webCronUrl ?? '') ?>">📋</button>
+            </div>
         </div>
     </div>
 <?php endif; ?>
